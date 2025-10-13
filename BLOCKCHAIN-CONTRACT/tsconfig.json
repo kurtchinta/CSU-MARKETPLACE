@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "lib": ["es2022"],
+    "outDir": "./dist",
+    "rootDir": "./",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "typeRoots": ["./node_modules/@types"],
+    "resolveJsonModule": true
+  },
+  "include": [
+    "./scripts/**/*",
+    "./test/**/*",
+    "./typechain-types/**/*",
+    "hardhat.config.ts"
+  ],
+  "exclude": ["node_modules", "dist", "cache", "artifacts"]
+}
