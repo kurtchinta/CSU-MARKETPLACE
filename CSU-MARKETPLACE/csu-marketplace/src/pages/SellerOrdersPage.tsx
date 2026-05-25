@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useModal } from '../context/ModalContext';
@@ -17,6 +18,7 @@ import {
   Copy,
   Check
 } from 'lucide-react';
+import Footer from '../components/Footer';
 
 interface SellerOrder {
   order_id: string;
@@ -96,6 +98,7 @@ interface TransactionRecord {
 export default function SellerOrdersPage() {
   const { user } = useAuth();
   const { showError, showSuccess } = useModal();
+  const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'Seller Orders - CSU Marketplace';
@@ -114,6 +117,19 @@ export default function SellerOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<SellerOrder | null>(null);
   const [finalPickupLocation, setFinalPickupLocation] = useState('');
   const [finalMeetupLocation, setFinalMeetupLocation] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  const getStatusColor = (status?: string): string => {
+    const normalizedStatus = (status || 'pending').toLowerCase();
+    const colorMap: Record<string, string> = {
+      'pending': '#fbbf24',      // Yellow/amber
+      'accepted': '#10b981',     // Green
+      'rejected': '#ef4444',     // Red
+      'completed': '#3b82f6',    // Blue
+      'cancelled': '#f59e0b',    // Orange
+    };
+    return colorMap[normalizedStatus] || '#208756'; // Default green
+  };
 
   const normalizeStatus = (status?: string, fallback?: string) => {
     const normalized = (status || fallback || 'pending').toLowerCase();
@@ -124,27 +140,27 @@ export default function SellerOrdersPage() {
     const map = new Map<string, TransactionRecord>();
     if (!supabase || orderIds.length === 0) return map;
 
-    // ✅ V6.6 FIX: Fetch the LATEST transaction for each order (handles multi-transaction model)
+    // V6.6 FIX: Fetch the LATEST transaction for each order (handles multi-transaction model)
     // This will show the current status (PENDING, ACCEPTED, REJECTED, CANCELLED, COMPLETED)
     const { data: transactionRecords, error } = await supabase
       .from('transactions')
       .select('order_id, transaction_id, blockchain_tx_hash, transaction_status, message_to_seller, created_at')
       .in('order_id', orderIds)
-      .order('created_at', { ascending: false });  // ✅ Get LATEST transaction (most recent)
+      .order('created_at', { ascending: false });  // Get LATEST transaction (most recent)
 
     if (error) {
       console.error('Error loading transaction information:', error);
       return map;
     }
 
-    // ✅ Store the LATEST transaction for each order (shows current status)
+    // Store the LATEST transaction for each order (shows current status)
     (transactionRecords || []).forEach((record: TransactionRecord) => {
       if (record.order_id && !map.has(record.order_id)) {
         map.set(record.order_id, record);
       }
     });
 
-    console.log('📊 Fetched latest transactions for', map.size, 'orders');
+    console.log('Fetched latest transactions for', map.size, 'orders');
     return map;
   };
 
@@ -157,7 +173,7 @@ export default function SellerOrdersPage() {
         return;
       }
 
-      console.log('🔍 Fetching orders for seller:', user?.id);
+      console.log('Fetching orders for seller:', user?.id);
 
       // Fetch all order data from order_details where you are the seller
       const { data, error } = await supabase
@@ -172,7 +188,7 @@ export default function SellerOrdersPage() {
         return;
       }
 
-      console.log('✅ Found', data?.length || 0, 'orders');
+      console.log('Found', data?.length || 0, 'orders');
 
       // Enrich orders with buyer info and transaction data
       if (data && data.length > 0) {
@@ -238,7 +254,7 @@ export default function SellerOrdersPage() {
               };
 
               // Debug logging
-              console.log('📦 Order Information:', {
+              console.log('Order Information:', {
                 order_id: enrichedOrder.order_id,
                 product_name: enrichedOrder.product_name,
                 price: enrichedOrder.price,
@@ -246,7 +262,7 @@ export default function SellerOrdersPage() {
                 transaction_status: enrichedOrder.transaction_status,
                 blockchain_tx_hash: enrichedOrder.blockchain_tx_hash
               });
-              console.log('👤 Buyer Information:', {
+              console.log('Buyer Information:', {
                 buyer_id: enrichedOrder.buyer_id,
                 buyer_username: enrichedOrder.buyer_username,
                 buyer_first_name: enrichedOrder.buyer_first_name,
@@ -268,10 +284,10 @@ export default function SellerOrdersPage() {
         );
 
         setOrders(ordersWithData);
-        console.log('✅ Loaded', ordersWithData.length, 'orders for seller');
+        console.log('Loaded', ordersWithData.length, 'orders for seller');
       } else {
         setOrders([]);
-        console.log('⚠️ No orders found for seller');
+        console.log('No orders found for seller');
       }
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -302,7 +318,7 @@ export default function SellerOrdersPage() {
           filter: `seller_id=eq.${user.id}`
         },
         () => {
-          console.log('🔁 Seller order update detected, reloading orders');
+          console.log('Seller order update detected, reloading orders');
           loadOrders();
         }
       )
@@ -319,7 +335,7 @@ export default function SellerOrdersPage() {
           table: 'transactions'
         },
         (payload) => {
-          console.log('🔁 Transaction update detected:', payload);
+          console.log('Transaction update detected:', payload);
           // Reload orders when any transaction is updated (buyer completes, cancels, etc.)
           loadOrders();
         }
@@ -375,12 +391,12 @@ export default function SellerOrdersPage() {
       setProcessingOrderId(selectedOrder.order_id);
       
       console.log('');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('✅ STARTING ORDER ACCEPTANCE PROCESS (SELLER)');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📋 Order ID:', selectedOrder.order_id);
-      console.log('📍 Final Pickup:', finalPickupLocation || 'Not specified');
-      console.log('📍 Final Meetup:', finalMeetupLocation || 'Not specified');
+      console.log('=============================================================');
+      console.log('STARTING ORDER ACCEPTANCE PROCESS (SELLER)');
+      console.log('=============================================================');
+      console.log('Order ID:', selectedOrder.order_id);
+      console.log('Final Pickup:', finalPickupLocation || 'Not specified');
+      console.log('Final Meetup:', finalMeetupLocation || 'Not specified');
       console.log('');
 
       // Ensure we have the original transaction ID (from initial order creation)
@@ -388,9 +404,9 @@ export default function SellerOrdersPage() {
         throw new Error('Original transaction ID not found. Order may not have been created properly.');
       }
 
-      console.log('📤 Step 1: Calling blockchain to accept transaction (V6.6)...');
+      console.log('Step 1: Calling blockchain to accept transaction (V6.6)...');
       console.log('   Original transaction_id:', selectedOrder.transaction_id);
-      console.log('   💳 MetaMask will open for gas fee payment...');
+      console.log('   MetaMask will open for gas fee payment...');
       
       // Generate NEW transaction_id for acceptance
       const newTransactionId = crypto.randomUUID();
@@ -405,20 +421,20 @@ export default function SellerOrdersPage() {
       );
 
       if (!blockchainAcceptResult.success) {
-        console.error('❌ Blockchain accept failed:', blockchainAcceptResult.message);
+        console.error('Blockchain accept failed:', blockchainAcceptResult.message);
         throw new Error(blockchainAcceptResult.message || 'Failed to accept on blockchain');
       }
 
-      console.log('✅ Blockchain transaction accepted!');
-      console.log('🔗 Accept Transaction Hash:', blockchainAcceptResult.transactionHash);
+      console.log('Blockchain transaction accepted!');
+      console.log('Accept Transaction Hash:', blockchainAcceptResult.transactionHash);
       console.log('');
       
       // Use blockchain timestamp if available, otherwise fallback to current time
       const acceptTimestamp = blockchainAcceptResult.blockchainTimestamp || new Date().toISOString();
-      console.log('📅 Using blockchain accepted_at timestamp:', acceptTimestamp);
+      console.log('Using blockchain accepted_at timestamp:', acceptTimestamp);
       console.log('');
       
-      console.log('📥 Step 2: Updating database with blockchain results...');
+      console.log('Step 2: Updating database with blockchain results...');
       
       // Step 2: Insert NEW transaction record with ACCEPTED status
       const { error: txInsertError } = await supabase
@@ -489,13 +505,8 @@ export default function SellerOrdersPage() {
       console.log('');
 
       showSuccess(
-        '✅ Order Accepted Successfully!',
-        `Order has been accepted and recorded on blockchain.\n\n` +
-        `🔗 Transaction Hash: ${blockchainAcceptResult.transactionHash?.substring(0, 16)}...\n` +
-        `📍 Pickup: ${finalPickupLocation || 'As specified'}\n` +
-        `📍 Meetup: ${finalMeetupLocation || 'As specified'}\n\n` +
-        `The buyer will be notified immediately.\n\n` +
-        `View on Etherscan: https://sepolia.etherscan.io/tx/${blockchainAcceptResult.transactionHash?.substring(0, 10)}...`
+        'Order Accepted Successfully!',
+        'Order has been accepted and recorded on blockchain.'
       );
 
       // Automatically open Etherscan link in new tab
@@ -513,7 +524,7 @@ export default function SellerOrdersPage() {
       setTimeout(() => loadOrders(), 1500);
       
     } catch (error: any) {
-      console.error('❌ Error in handleAcceptOrder:', error);
+      console.error('Error in handleAcceptOrder:', error);
       showError('Error', `Failed to accept order: ${error.message}`);
     } finally {
       setProcessingOrderId(null);
@@ -550,24 +561,24 @@ export default function SellerOrdersPage() {
       const blockchainRejectResult = await blockchainService.rejectTransaction(
         selectedOrder.transaction_id,   // Original supabaseId
         newTransactionId,               // NEW supabaseId for rejection
-        'Order rejected by seller'
+        rejectionReason || 'Order rejected by seller'
       );
 
       if (!blockchainRejectResult.success) {
-        console.error('❌ Blockchain reject failed:', blockchainRejectResult.message);
+        console.error('Blockchain reject failed:', blockchainRejectResult.message);
         throw new Error(blockchainRejectResult.message || 'Failed to reject on blockchain');
       }
 
-      console.log('✅ Blockchain transaction rejected!');
-      console.log('🔗 Reject Transaction Hash:', blockchainRejectResult.transactionHash);
+      console.log('Blockchain transaction rejected!');
+      console.log('Reject Transaction Hash:', blockchainRejectResult.transactionHash);
       console.log('');
       
       // Use blockchain timestamp if available, otherwise fallback to current time
       const rejectTimestamp = blockchainRejectResult.blockchainTimestamp || new Date().toISOString();
-      console.log('📅 Using blockchain rejected_at timestamp:', rejectTimestamp);
+      console.log('Using blockchain rejected_at timestamp:', rejectTimestamp);
       console.log('');
       
-      console.log('📥 Step 2: Updating database with blockchain results...');
+      console.log('Step 2: Updating database with blockchain results...');
       
       // Step 2: Insert NEW transaction record with REJECTED status
       const { error: txInsertError } = await supabase
@@ -596,7 +607,7 @@ export default function SellerOrdersPage() {
           buyer_name: `${selectedOrder.buyer_first_name} ${selectedOrder.buyer_last_name}`,
           seller_name: user?.email || 'Seller',
           transaction_status: 'REJECTED',
-          rejection_reason: 'Order rejected by seller',
+          rejection_reason: rejectionReason || 'Order rejected by seller',
           blockchain_tx_hash: blockchainRejectResult.transactionHash,
           rejected_at: rejectTimestamp,
           created_at: rejectTimestamp,
@@ -604,10 +615,10 @@ export default function SellerOrdersPage() {
           is_blockchain_pending: false
         });
 
-      // ✅ QUANTITY RESTORATION: Restore product quantity on rejection
+      // QUANTITY RESTORATION: Restore product quantity on rejection
       if (selectedOrder.listing_type === 'FOR_SALE' || selectedOrder.listing_type === 'FOR_RENT') {
         try {
-          console.log('📦 Restoring product quantity after rejection...');
+          console.log('Restoring product quantity after rejection...');
           console.log('   Product ID:', selectedOrder.product_id);
           console.log('   Quantity to restore:', selectedOrder.buyer_quantity);
 
@@ -619,7 +630,7 @@ export default function SellerOrdersPage() {
             .single();
 
           if (fetchError) {
-            console.error('❌ Failed to fetch current product quantity:', fetchError);
+            console.error('Failed to fetch current product quantity:', fetchError);
           } else {
             const restoredQuantity = (currentProduct.quantity ?? 0) + selectedOrder.buyer_quantity;
             console.log('   Current quantity:', currentProduct.quantity);
@@ -635,13 +646,13 @@ export default function SellerOrdersPage() {
               .eq('product_id', selectedOrder.product_id);
 
             if (quantityError) {
-              console.error('❌ Failed to restore product quantity:', quantityError);
+              console.error('Failed to restore product quantity:', quantityError);
             } else {
-              console.log('✅ Product quantity restored and marked as available');
+              console.log('Product quantity restored and marked as available');
             }
           }
         } catch (quantityRestoreError) {
-          console.error('⚠️ Exception restoring product quantity:', quantityRestoreError);
+          console.error('Exception restoring product quantity:', quantityRestoreError);
         }
       }
 
@@ -657,7 +668,7 @@ export default function SellerOrdersPage() {
         .from('order_details')
         .update({
           order_status: 'rejected',
-          rejection_reason: 'Order rejected by seller',
+          rejection_reason: rejectionReason || 'Order rejected by seller',
           updated_at: rejectTimestamp
         })
         .eq('order_id', selectedOrder.order_id);
@@ -679,11 +690,8 @@ export default function SellerOrdersPage() {
       console.log('');
 
       showSuccess(
-        '✅ Order Rejected Successfully!',
-        `Order has been rejected and recorded on blockchain.\n\n` +
-        `🔗 Transaction Hash: ${blockchainRejectResult.transactionHash?.substring(0, 16)}...\n\n` +
-        `The buyer will be notified immediately.\n\n` +
-        `View on Etherscan: https://sepolia.etherscan.io/tx/${blockchainRejectResult.transactionHash?.substring(0, 10)}...`
+        'Order Rejected Successfully!',
+        'Order has been rejected and recorded on blockchain.'
       );
 
       // Automatically open Etherscan link in new tab
@@ -694,12 +702,13 @@ export default function SellerOrdersPage() {
       // Close modal and refresh
       setShowRejectModal(false);
       setSelectedOrder(null);
+      setRejectionReason('');
       
       // Reload orders to reflect changes
       setTimeout(() => loadOrders(), 1500);
       
     } catch (error: any) {
-      console.error('❌ Error in handleRejectOrder:', error);
+      console.error('Error in handleRejectOrder:', error);
       showError('Error', `Failed to reject order: ${error.message}`);
     } finally {
       setProcessingOrderId(null);
@@ -715,6 +724,7 @@ export default function SellerOrdersPage() {
 
   const openRejectModal = (order: SellerOrder) => {
     setSelectedOrder(order);
+    setRejectionReason('');
     setShowRejectModal(true);
   };
 
@@ -728,13 +738,13 @@ export default function SellerOrdersPage() {
 
     try {
       console.log('');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('✅ STARTING ORDER COMPLETION PROCESS (SELLER)');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📦 Order ID:', order.order_id);
-      console.log('🔗 Transaction ID (Supabase):', order.transaction_id);
-      console.log('👤 Seller ID:', user?.id);
-      console.log('🛒 Buyer ID:', order.buyer_id);
+      console.log('=============================================================');
+      console.log('STARTING ORDER COMPLETION PROCESS (SELLER)');
+      console.log('=============================================================');
+      console.log('Order ID:', order.order_id);
+      console.log('Transaction ID (Supabase):', order.transaction_id);
+      console.log('Seller ID:', user?.id);
+      console.log('Buyer ID:', order.buyer_id);
       console.log('');
 
       // Get currently connected wallet
@@ -744,12 +754,12 @@ export default function SellerOrdersPage() {
         setProcessingOrderId(null);
         return;
       }
-      console.log('🔗 Using wallet:', currentWallet);
+      console.log('Using wallet:', currentWallet);
       console.log('');
 
       // Generate NEW transaction_id for V6.6 completion
       const newTransactionId = crypto.randomUUID();
-      console.log('📤 Step 1: Calling blockchain service to complete transaction (V6.6)...');
+      console.log('Step 1: Calling blockchain service to complete transaction (V6.6)...');
       console.log('   Original transaction_id:', order.transaction_id);
       console.log('   NEW transaction_id:', newTransactionId);
       console.log('   Using wallet:', currentWallet);
@@ -759,7 +769,7 @@ export default function SellerOrdersPage() {
         newTransactionId       // NEW transaction ID for completion
       );
 
-      console.log('📥 Step 2: Blockchain service response received');
+      console.log('Step 2: Blockchain service response received');
       console.log('   Success:', completeResult.success);
       console.log('   Transaction Hash:', completeResult.transactionHash || 'N/A');
       console.log('   Message:', completeResult.message);
@@ -768,13 +778,13 @@ export default function SellerOrdersPage() {
         throw new Error(completeResult.message || 'Failed to complete transaction on blockchain');
       }
 
-      console.log('✅ Blockchain completion successful!');
+      console.log('Blockchain completion successful!');
       console.log('');
 
       // Update database ONLY after successful blockchain transaction
       if (completeResult.transactionHash) {
         const completedTimestamp = completeResult.blockchainTimestamp || new Date().toISOString();
-        console.log('📅 Using blockchain completed_at timestamp:', completedTimestamp);
+        console.log('Using blockchain completed_at timestamp:', completedTimestamp);
 
         // Insert NEW transaction record with COMPLETED status
         const { error: txInsertError } = await supabase
@@ -841,10 +851,8 @@ export default function SellerOrdersPage() {
       console.log('');
 
       showSuccess(
-        '✅ Transaction Completed Successfully!',
-        `Transaction has been marked as complete on blockchain.\n\n` +
-        `🔗 Transaction Hash: ${completeResult.transactionHash?.substring(0, 16)}...\n\n` +
-        `The buyer will be notified immediately.`
+        'Transaction Completed Successfully!',
+        'Transaction has been marked as complete on blockchain.'
       );
 
       // Automatically open Etherscan link in new tab
@@ -858,13 +866,13 @@ export default function SellerOrdersPage() {
       console.log('✅ Orders reloaded successfully');
     } catch (error: any) {
       console.error('');
-      console.error('═══════════════════════════════════════════════════════════');
-      console.error('❌ ORDER COMPLETION FAILED');
-      console.error('═══════════════════════════════════════════════════════════');
+      console.error('=============================================================');
+      console.error('ORDER COMPLETION FAILED');
+      console.error('=============================================================');
       console.error('Error:', error);
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
-      console.error('═══════════════════════════════════════════════════════════');
+      console.error('=============================================================');
       console.error('');
       showError('Error', error.message || 'Failed to complete transaction');
     } finally {
@@ -888,159 +896,213 @@ export default function SellerOrdersPage() {
     : orders.filter(order => order.order_status === filter);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#f8f9fa' }}>
-      <div className="container mx-auto px-6 lg:px-12 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2" style={{ color: '#208756' }}>Order Requests</h1>
-          <p className="text-base" style={{ color: '#666666' }}>Manage purchase requests from buyers</p>
+    <div className="min-h-screen" style={{ backgroundColor: '#f5f7fa' }}>
+      {/* Simple Header Section */}
+      <div style={{ backgroundColor: '#208756' }} className="text-white py-6 px-6 lg:px-12">
+        <div className="container mx-auto max-w-7xl">
+          <h1 className="text-3xl font-bold" style={{ color: 'white' }}>Order Requests</h1>
+          <p className="text-sm mt-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Manage purchase requests from buyers</p>
         </div>
+      </div>
 
+      <div className="container mx-auto px-6 lg:px-12 py-8 max-w-7xl">
         {/* Filter Tabs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden">
-          <div className="flex flex-wrap border-b border-gray-200">
-            {['all', 'pending', 'accepted', 'completed', 'rejected', 'cancelled'].map((tab) => {
-              const count = tab === 'all' ? orders.length : orders.filter(o => o.order_status === tab).length;
-              const isActive = filter === tab;
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setFilter(tab)}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-                    isActive
-                      ? 'border-b-2 text-white'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                  }`}
-                  style={isActive ? { backgroundColor: '#208756', borderColor: '#208756', color: 'white' } : {}}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)} ({count})
-                </button>
-              );
-            })}
-          </div>
+        <div className="mb-8 flex flex-wrap gap-2">
+          {['all', 'pending', 'accepted', 'completed', 'rejected', 'cancelled'].map((tab) => {
+            const count = tab === 'all' ? orders.length : orders.filter(o => o.order_status === tab).length;
+            const isActive = filter === tab;
+            
+            const statusColors: { [key: string]: { bg: string; text: string } } = {
+              'all': { bg: '#208756', text: 'white' },
+              'pending': { bg: '#fef3c7', text: '#92400e' },
+              'accepted': { bg: '#dcfce7', text: '#166534' },
+              'completed': { bg: '#dbeafe', text: '#1e40af' },
+              'rejected': { bg: '#fee2e2', text: '#991b1b' },
+              'cancelled': { bg: '#fed7aa', text: '#9a3412' }
+            };
+            
+            const colors = statusColors[tab];
+            
+            return (
+              <button
+                key={tab}
+                onClick={() => setFilter(tab)}
+                className="px-4 py-2 rounded-lg font-semibold text-sm transition-all"
+                style={{
+                  backgroundColor: isActive ? colors.bg : colors.bg,
+                  color: colors.text,
+                  opacity: isActive ? 1 : 0.7
+                }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)} ({count})
+              </button>
+            );
+          })}
         </div>
 
         {/* Orders List */}
         {filteredOrders.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border-t-4 overflow-hidden" style={{ borderTopColor: '#208756', borderColor: '#e0e0e0' }}>
-            <div className="p-12 text-center">
-              <Package className="w-20 h-20 mx-auto mb-4" style={{ color: '#d4e8e4' }} />
-              <p style={{ color: '#1a1a1a' }} className="mb-2 text-lg font-semibold">No order requests found</p>
-              <p style={{ color: '#666666' }} className="mb-6">
-                {filter === 'all' 
-                  ? "You haven't received any order requests yet." 
-                  : `No ${filter} orders at the moment.`}
-              </p>
+          <div className="bg-white rounded-2xl shadow-md border-t-4 overflow-hidden p-12 text-center" style={{ borderTopColor: '#208756' }}>
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-6" style={{ backgroundColor: '#f0f8f6' }}>
+              <Package className="w-10 h-10" style={{ color: '#208756' }} />
+            </div>
+            <h3 className="text-2xl font-bold mb-2" style={{ color: '#1a1a1a' }}>No Order Requests</h3>
+            <p className="text-gray-600 mb-6 max-w-md mx-auto">
+              {filter === 'all' 
+                ? "You haven't received any order requests yet. List products to start receiving orders!" 
+                : `No ${filter} orders at the moment. Check your other requests.`}
+            </p>
+            <div className="flex gap-3 justify-center">
               {filter !== 'all' && (
                 <button
                   onClick={() => setFilter('all')}
-                  className="font-medium transition-colors"
-                  style={{ color: '#208756' }}
-                  onMouseOver={(e) => (e.currentTarget.style.color = '#1a6d46')}
-                  onMouseOut={(e) => (e.currentTarget.style.color = '#208756')}
+                  className="px-6 py-2.5 rounded-lg font-semibold transition-all hover:scale-105 text-white"
+                  style={{ backgroundColor: '#208756' }}
                 >
-                  View all orders
+                  View All Requests
                 </button>
               )}
+              <button
+                onClick={() => navigate('/create-listing')}
+                className="px-6 py-2.5 rounded-lg font-semibold transition-all hover:scale-105 border-2"
+                style={{ borderColor: '#208756', color: '#208756' }}
+              >
+                Create Listing
+              </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {filteredOrders.map((order) => (
-              <div key={order.order_id} className="bg-white rounded-lg shadow-sm overflow-hidden border-t-4 hover:shadow-md transition-shadow" style={{ borderTopColor: '#208756' }}>
-                {/* Order Header - Always Visible */}
+              <div 
+                key={order.order_id} 
+                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border-l-4 group"
+                style={{ borderLeftColor: '#208756' }}
+              >
+                {/* Order Header */}
                 <div 
                   onClick={() => setExpandedOrderId(expandedOrderId === order.order_id ? null : order.order_id)}
-                  className="p-6 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100"
+                  className="p-5 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100 group-hover:bg-gray-50"
                 >
                   <div className="flex items-start justify-between gap-4">
+                    {/* Left Section - Product & Buyer Info */}
                     <div className="flex-1 min-w-0 flex items-start gap-4">
-                      {/* Buyer Profile Picture */}
-                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      {/* Buyer Avatar */}
+                      <div className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border-2" style={{ borderColor: '#f0f8f6', backgroundColor: '#f0f8f6' }}>
                         {order.buyer_profile_picture ? (
                           <img 
                             src={order.buyer_profile_picture} 
                             alt={order.buyer_username}
-                            className="w-12 h-12 rounded-full object-cover"
+                            className="w-14 h-14 object-cover"
                           />
                         ) : (
-                          <User className="w-6 h-6 text-gray-400" />
+                          <User className="w-7 h-7 text-gray-400" />
                         )}
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold mb-2" style={{ color: '#1a1a1a' }}>{order.product_name}</h3>
-                        <div className="flex flex-wrap gap-3 text-sm" style={{ color: '#666666' }}>
-                          <span className="flex items-center gap-1">
-                            <User className="w-4 h-4" />
-                            {order.buyer_first_name} {order.buyer_last_name} (@{order.buyer_username})
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {formatDate(order.created_at)}
-                          </span>
-                          <span className="flex items-center gap-1 uppercase font-medium" style={{ color: '#208756' }}>
+                        {/* Product Name & Type */}
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <h3 className="text-base lg:text-lg font-bold" style={{ color: '#1a1a1a' }}>
+                            {order.product_name}
+                          </h3>
+                          <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold" 
+                            style={{
+                              backgroundColor: order.listing_type === 'FOR_SALE' ? '#dbeafe' : 
+                                              order.listing_type === 'FOR_RENT' ? '#fce7f3' : '#f3e8ff',
+                              color: order.listing_type === 'FOR_SALE' ? '#1e40af' : 
+                                     order.listing_type === 'FOR_RENT' ? '#be185d' : '#7c3aed'
+                            }}>
                             {order.listing_type.replace('_', ' ')}
                           </span>
                         </div>
+
+                        {/* Buyer Name */}
+                        <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
+                          Buyer: <span style={{ color: '#208756', fontWeight: '700' }}>@{order.buyer_username}</span>
+                        </p>
+
+                        {/* Meta Info */}
+                        <div className="flex flex-wrap gap-3 text-xs" style={{ color: '#666666' }}>
+                          <span className="flex items-center gap-1">
+                            <User className="w-3.5 h-3.5" />
+                            {order.buyer_first_name} {order.buyer_last_name}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {formatDate(order.created_at)}
+                          </span>
+                        </div>
+
+                        {/* Blockchain Hash Display */}
                         {order.blockchain_tx_hash && (
-                          <div className="mt-3 flex items-center gap-2">
-                            <div 
-                              className="inline-flex items-center gap-2 text-xs font-mono px-3 py-1 rounded-full cursor-pointer transition-colors"
-                              style={{ 
-                                backgroundColor: order.order_status === 'accepted' ? '#f0fdf4' : order.order_status === 'rejected' ? '#fef2f2' : '#f0f8f6',
-                                color: order.order_status === 'accepted' ? '#10b981' : order.order_status === 'rejected' ? '#ef4444' : '#208756',
-                                border: `1px solid ${order.order_status === 'accepted' ? '#10b981' : order.order_status === 'rejected' ? '#ef4444' : '#208756'}`
-                              }}
+                          <div className="mt-3 flex items-center gap-2 flex-wrap">
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 copyToClipboard(order.blockchain_tx_hash!);
                               }}
+                              className="inline-flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg cursor-pointer transition-all hover:shadow-sm"
+                              style={{ 
+                                backgroundColor: '#f0f8f6',
+                                color: '#208756',
+                                border: '1px solid #d4e8e4'
+                              }}
                             >
                               {copiedHash === order.blockchain_tx_hash ? (
-                                <Check className="w-3 h-3" />
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  Copied!
+                                </>
                               ) : (
-                                <Copy className="w-3 h-3" />
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  {order.blockchain_tx_hash.substring(0, 12)}...
+                                </>
                               )}
-                              {order.blockchain_tx_hash.substring(0, 10)}...
-                            </div>
+                            </button>
                             <a
                               href={`https://sepolia.etherscan.io/tx/${order.blockchain_tx_hash}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="text-xs inline-flex items-center gap-1 transition-colors font-medium"
+                              className="inline-flex items-center gap-1 text-xs font-semibold transition-colors hover:scale-105"
                               style={{ color: '#208756' }}
-                              onMouseOver={(e) => (e.currentTarget.style.color = '#1a6d46')}
-                              onMouseOut={(e) => (e.currentTarget.style.color = '#208756')}
                             >
-                              View <ExternalLink className="w-3 h-3" />
+                              View on Etherscan
+                              <ExternalLink className="w-3 h-3" />
                             </a>
-                          </div>
-                        )}
-                        {!order.blockchain_tx_hash && (
-                          <div className="mt-3 text-xs" style={{ color: '#999999' }}>
-                            Blockchain transaction pending...
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="text-right whitespace-nowrap flex flex-col items-end gap-2">
-                      <p className="text-2xl font-bold" style={{ color: '#208756' }}>{formatPrice(order.price * order.buyer_quantity)}</p>
-                      <p className="text-sm" style={{ color: '#666666' }}>{formatPrice(order.price)} × {order.buyer_quantity}</p>
-                      <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${
+                    {/* Right Section - Price & Status */}
+                    <div className="text-right whitespace-nowrap flex flex-col items-end gap-3">
+                      <div>
+                        <p className="text-xl lg:text-2xl font-bold" style={{ color: '#208756' }}>
+                          {formatPrice(order.price * order.buyer_quantity)}
+                        </p>
+                        <p className="text-xs" style={{ color: '#666666' }}>
+                          {formatPrice(order.price)} × {order.buyer_quantity}
+                        </p>
+                      </div>
+                      
+                      {/* Status Badge */}
+                      <span className={`inline-block px-4 py-1.5 text-xs font-bold rounded-full transition-all ${
                         order.order_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                         order.order_status === 'accepted' ? 'bg-green-100 text-green-800' :
                         order.order_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                        order.order_status === 'completed' ? 'bg-blue-100 text-blue-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
                       </span>
+                      
                       {expandedOrderId === order.order_id ? (
-                        <ChevronUp className="w-5 h-5" style={{ color: '#666666' }} />
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
                       ) : (
-                        <ChevronDown className="w-5 h-5" style={{ color: '#666666' }} />
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
                       )}
                     </div>
                   </div>
@@ -1318,24 +1380,18 @@ export default function SellerOrdersPage() {
                     {order.blockchain_tx_hash && (
                       <div className="rounded-lg p-5 border-2" style={{ 
                         backgroundColor: '#ffffff', 
-                        borderColor: order.order_status === 'accepted' ? '#10b981' : 
-                                    order.order_status === 'rejected' ? '#ef4444' : 
-                                    order.order_status === 'completed' ? '#3b82f6' : 
-                                    order.order_status === 'cancelled' ? '#f59e0b' : '#208756'
+                        borderColor: getStatusColor(order.order_status)
                       }}>
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-sm font-bold flex items-center gap-2" style={{ 
-                            color: order.order_status === 'accepted' ? '#10b981' : 
-                                  order.order_status === 'rejected' ? '#ef4444' : 
-                                  order.order_status === 'completed' ? '#3b82f6' : 
-                                  order.order_status === 'cancelled' ? '#f59e0b' : '#208756'
+                            color: getStatusColor(order.order_status)
                           }}>
                             <span>
-                              {order.order_status === 'accepted' && '✅ Transaction Accepted on Blockchain'}
-                              {order.order_status === 'rejected' && '❌ Transaction Rejected on Blockchain'}
-                              {order.order_status === 'completed' && '✅ Transaction Completed on Blockchain'}
-                              {order.order_status === 'cancelled' && '🚫 Transaction Cancelled on Blockchain'}
-                              {order.order_status === 'pending' && '🔗 Blockchain Transaction Recorded'}
+                              {order.order_status === 'accepted' && ' Transaction Accepted on Blockchain'}
+                              {order.order_status === 'rejected' && ' Transaction Rejected on Blockchain'}
+                              {order.order_status === 'completed' && ' Transaction Completed on Blockchain'}
+                              {order.order_status === 'cancelled' && ' Transaction Cancelled on Blockchain'}
+                              {order.order_status === 'pending' && ' Blockchain Transaction Recorded'}
                             </span>
                           </h4>
                           <a
@@ -1344,10 +1400,7 @@ export default function SellerOrdersPage() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold text-xs transition-all"
                             style={{ 
-                              backgroundColor: order.order_status === 'accepted' ? '#10b981' : 
-                                              order.order_status === 'rejected' ? '#ef4444' : 
-                                              order.order_status === 'completed' ? '#3b82f6' : 
-                                              order.order_status === 'cancelled' ? '#f59e0b' : '#208756',
+                              backgroundColor: getStatusColor(order.order_status),
                               color: 'white'
                             }}
                             onMouseOver={(e) => {
@@ -1371,8 +1424,8 @@ export default function SellerOrdersPage() {
                               className="inline-flex items-center gap-2 text-xs font-mono px-3 py-1 rounded-full transition-colors"
                               style={{
                                 backgroundColor: '#f8f9fa',
-                                color: '#208756',
-                                border: '1px solid #d4e8e4'
+                                color: getStatusColor(order.order_status),
+                                border: `1px solid ${getStatusColor(order.order_status)}`
                               }}
                             >
                               {copiedHash === order.blockchain_tx_hash ? (
@@ -1392,32 +1445,23 @@ export default function SellerOrdersPage() {
                             {order.blockchain_tx_hash}
                           </code>
                           <div style={{ 
-                            backgroundColor: order.order_status === 'accepted' ? '#f0fdf4' : 
-                                            order.order_status === 'rejected' ? '#fef2f2' : 
-                                            order.order_status === 'completed' ? '#eff6ff' : 
-                                            order.order_status === 'cancelled' ? '#fffbeb' : '#f0f8f6', 
+                            backgroundColor: getStatusColor(order.order_status) + '15',
                             borderRadius: '6px', 
                             padding: '12px', 
                             marginTop: '8px',
-                            border: `1px solid ${order.order_status === 'accepted' ? '#10b981' : 
-                                                  order.order_status === 'rejected' ? '#ef4444' : 
-                                                  order.order_status === 'completed' ? '#3b82f6' : 
-                                                  order.order_status === 'cancelled' ? '#f59e0b' : '#208756'}`
+                            border: `1px solid ${getStatusColor(order.order_status)}`
                           }}>
                             <p style={{ 
-                              color: order.order_status === 'accepted' ? '#10b981' : 
-                                    order.order_status === 'rejected' ? '#ef4444' : 
-                                    order.order_status === 'completed' ? '#3b82f6' : 
-                                    order.order_status === 'cancelled' ? '#f59e0b' : '#208756', 
+                              color: getStatusColor(order.order_status),
                               fontSize: '13px', 
                               margin: 0,
                               fontWeight: '600'
                             }}>
-                              {order.order_status === 'accepted' && '✅ This order has been accepted and permanently recorded on Sepolia testnet'}
-                              {order.order_status === 'rejected' && '❌ This order has been rejected and permanently recorded on Sepolia testnet'}
-                              {order.order_status === 'completed' && '✅ This transaction is complete and permanently recorded on Sepolia testnet'}
-                              {order.order_status === 'cancelled' && '🚫 This order was cancelled and permanently recorded on Sepolia testnet'}
-                              {order.order_status === 'pending' && '⏳ Transaction is waiting for your response on the blockchain'}
+                              {order.order_status === 'accepted' && ' This order has been accepted and permanently recorded on Sepolia testnet'}
+                              {order.order_status === 'rejected' && ' This order has been rejected and permanently recorded on Sepolia testnet'}
+                              {order.order_status === 'completed' && 'This transaction is complete and permanently recorded on Sepolia testnet'}
+                              {order.order_status === 'cancelled' && ' This order was cancelled and permanently recorded on Sepolia testnet'}
+                              {order.order_status === 'pending' && 'Transaction is waiting for your response on the blockchain'}
                             </p>
                           </div>
                         </div>
@@ -1586,7 +1630,7 @@ export default function SellerOrdersPage() {
 
             <div className="rounded-lg p-4 mb-6" style={{ backgroundColor: '#f0f8f6', border: '1px solid #d4e8e4' }}>
               <p className="text-sm" style={{ color: '#208756' }}>
-                ℹ️ This will create a transaction record and update the blockchain.
+                This will create a transaction record and update the blockchain.
               </p>
             </div>
 
@@ -1623,15 +1667,37 @@ export default function SellerOrdersPage() {
       {/* Reject Order Modal */}
       {showRejectModal && selectedOrder && (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-4" style={{ color: '#ef4444' }}>Reject Order</h2>
             <p className="text-gray-600 mb-6">
               Are you sure you want to reject this order from <strong>{selectedOrder.buyer_first_name} {selectedOrder.buyer_last_name}</strong> for <strong>{selectedOrder.product_name}</strong>?
             </p>
 
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rejection Reason (Required)
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Please provide a reason for rejecting this order..."
+                  maxLength={500}
+                  rows={4}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent resize-none"
+                  style={{ borderColor: '#f3a3a3', outline: 'none' }}
+                  onFocus={(e) => (e.target.style.borderColor = '#ef4444')}
+                  onBlur={(e) => (e.target.style.borderColor = '#f3a3a3')}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {rejectionReason.length}/500 characters
+                </p>
+              </div>
+            </div>
+
             <div className="rounded-lg p-4 mb-6" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca' }}>
               <p className="text-sm" style={{ color: '#ef4444' }}>
-                ⚠️ This action will be recorded on the blockchain and cannot be undone.
+                This action will be recorded on the blockchain and cannot be undone.
               </p>
             </div>
 
@@ -1650,6 +1716,7 @@ export default function SellerOrdersPage() {
                 onClick={() => {
                   setShowRejectModal(false);
                   setSelectedOrder(null);
+                  setRejectionReason('');
                 }}
                 className="flex-1 px-4 py-2 rounded-lg font-medium transition-colors"
                 style={{ backgroundColor: '#e0e0e0', color: '#666666' }}
@@ -1662,6 +1729,7 @@ export default function SellerOrdersPage() {
           </div>
         </div>
       )}
+      <Footer />
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { useModal } from '../context/ModalContext';
 import { productService, type Product } from '../services/productService';
 import ImageCarousel from '../components/ImageCarousel';
 import { supabase } from '../lib/supabase';
-
+import { Users, MapPin, Phone } from 'lucide-react';
+import Footer from '../components/Footer';
 const MyListingsPage: React.FC = () => {
   useEffect(() => {
     document.title = 'My Listings - CSU Marketplace';
@@ -239,7 +240,7 @@ const MyListingsPage: React.FC = () => {
               <div 
                 key={product.product_id}
                 onClick={() => navigate(`/product/${product.product_id}`)}
-                className="bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+                className="bg-white rounded-lg overflow-hidden hover:shadow-lg transition-all cursor-pointer border-2 border-gray-200 hover:border-[#208756]"
               >
                 {/* Product Image */}
                 <div className="relative w-full" style={{ paddingBottom: '100%' }}>
@@ -250,92 +251,96 @@ const MyListingsPage: React.FC = () => {
                       className="h-full w-full"
                     />
                   </div>
-                  
-                  {/* Listing Type Badge */}
-                  <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold text-white ${
-                    product.listing_type === 'FOR_SALE' 
-                      ? 'bg-green-600' 
-                      : product.listing_type === 'FOR_RENT'
-                      ? 'bg-blue-500'
-                      : 'bg-purple-600'
-                  }`}>
-                    {product.listing_type === 'FOR_SALE' ? 'FOR SALE' : product.listing_type === 'FOR_RENT' ? 'FOR RENT' : 'SERVICE'}
-                  </div>
 
-                  {/* Status Badge - Only for approved/pending/rejected */}
-                  {product.status !== 'APPROVED' && (
-                    <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-bold text-white ${
-                      product.status === 'PENDING' 
-                        ? 'bg-yellow-500' 
-                        : 'bg-red-600'
-                    }`}>
-                      {product.status}
-                    </div>
-                  )}
-
+                    {/* Image Counter - Top Right */}
+                    {product.images && product.images.length > 1 && (
+                      <div className="absolute top-3 right-3 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center space-x-1 border-opacity-50">
+                        <span className="text-xs font-bold text-green-800">+{product.images.length - 1}</span>
+                      </div>
+                    )}
+                
                   {/* Sold Out Badge */}
                   {product.quantity === 0 && product.listing_type === 'FOR_SALE' && (
                     <div className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
                       SOLD OUT
                     </div>
                   )}
+
                 </div>
 
                 {/* Product Info */}
                 <div className="p-3">
-                  {/* Product Name */}
-                  <h3 className="text-sm mt-5 font-medium text-gray-900 line-clamp-2 mb-1" style={{ minHeight: '40px' }}>
-                    {product.product_name}
-                  </h3>
+                  {/* Product Name with Status Badge */}
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <h3 className="text-sm mt-5 font-medium text-gray-900 line-clamp-2" style={{ minHeight: '40px' }}>
+                      {product.product_name}
+                    </h3>
+                    {(product.status === 'PENDING' || product.status === 'APPROVED') && (
+                      <div className={`px-2.5 py-1 rounded text-xs font-bold text-white flex-shrink-0 mt-5 ${
+                        product.status === 'PENDING' 
+                          ? 'bg-yellow-500' 
+                          : 'bg-green-600'
+                      }`}>
+                        {product.status}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Product Description */}
                   <p className="text-xs text-gray-500 line-clamp-1 mb-2">
                     {product.description}
                   </p>
-
-                  {/* Price */}
-                  <div className="mb-2">
-                    <p className="text-lg font-bold" style={{ color: '#208756' }}>
-                      {formatPrice(product.price)}
-                    </p>
-                  </div>
-
-                  {/* Seller Info */}
-                  <div className="pb-2 border-t border-gray-100 pt-2">
-                    <div className="flex items-center space-x-2">
-                      {product.seller?.profile_picture ? (
-                        <img
-                          src={product.seller.profile_picture}
-                          alt={product.seller.username}
-                          className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
-                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-gray-600 truncate font-medium">
-                          {product.seller?.username || 'Unknown'}
-                        </p>
+                    {/* Price & Listing Type Badge */}
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-lg font-bold" style={{ color: '#208756' }}>
+                        {formatPrice(product.price)}
+                      </p>
+                      <div className={`px-2.5 py-1 rounded-full text-xs font-semibold text-white ${
+                        product.listing_type === 'FOR_SALE' 
+                          ? 'bg-[#208756]' 
+                          : product.listing_type === 'FOR_RENT'
+                          ? 'bg-blue-600'
+                          : 'bg-purple-600'
+                      }`}>
+                        {product.listing_type === 'FOR_SALE' ? 'For Sale' : product.listing_type === 'FOR_RENT' ? 'For Rent' : 'Service'}
                       </div>
-                      {product.seller?.phone_number && (
-                        <div className="flex items-center space-x-1 flex-shrink-0">
-                          <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                          </svg>
-                          <p className="text-xs text-gray-500 truncate">
-                            {product.seller.phone_number}
-                          </p>
-                        </div>
-                      )}
                     </div>
-                  </div>
+
+                      {/* Seller Info */}
+                      <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                        <div className="flex-shrink-0">
+                          {product.seller?.profile_picture ? (
+                            <img
+                              src={product.seller.profile_picture.startsWith('http') 
+                                ? product.seller.profile_picture 
+                                : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/profile-pictures/${product.seller.profile_picture}`
+                              }
+                              alt={`${product.seller?.first_name} ${product.seller?.last_name}`}
+                              className="w-8 h-8 rounded-full object-cover border-2 border-[#208756]"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-gradient-to-br from-[#208756] to-[#1a6d45] rounded-full flex items-center justify-center">
+                              <Users className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-900 truncate">
+                            {product.seller?.first_name} {product.seller?.last_name}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {product.seller?.phone_number && (
+                              <Phone className="w-3 h-3 text-gray-400" />
+                            )}
+                            <p className="text-xs text-gray-500 truncate">
+                              {product.seller?.phone_number || product.seller?.username}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                 
                   {/* Seller Rating */}
-                  <div className="flex items-center space-x-1 mt-0.5 mb-2">
+                  <div className="flex items-center space-x-1 mt-0.5 mb-2 mt-3">
                     <svg className="w-3 h-3 text-yellow-400 fill-current" viewBox="0 0 20 20">
                       <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
                     </svg>
@@ -384,10 +389,7 @@ const MyListingsPage: React.FC = () => {
                     <div className="flex items-center justify-between text-xs text-gray-500">
                       {/* Pickup Location */}
                       <div className="flex items-center space-x-1 flex-1 min-w-0">
-                        <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                      <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0 mt-0.5" />  
                         <p className="truncate">{product.pickup_location || 'N/A'}</p>
                       </div>
                       {/* Sold Count */}
@@ -407,10 +409,7 @@ const MyListingsPage: React.FC = () => {
                   {/* Pickup Location for FOR_RENT */}
                   {product.listing_type === 'FOR_RENT' && (
                     <div className="flex items-center space-x-1 text-xs text-gray-500 mb-2">
-                      <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
+                      <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0 mt-0.5" />
                       <p className="truncate">{product.pickup_location || 'N/A'}</p>
                     </div>
                   )}
@@ -425,10 +424,7 @@ const MyListingsPage: React.FC = () => {
                   {/* Meetup Location for SERVICE */}
                   {product.listing_type === 'SERVICE' && (
                     <div className="flex items-center space-x-1 text-xs text-gray-500 mb-2">
-                      <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
+                      <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0 mt-0.5" />
                       <p className="truncate">{product.meetup_location || 'N/A'}</p>
                     </div>
                   )}
@@ -478,6 +474,7 @@ const MyListingsPage: React.FC = () => {
           </>
         )}
       </div>
+      <Footer />
     </div>
   );
 };

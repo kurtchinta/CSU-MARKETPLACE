@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useWallet } from '../hooks/useWallet';
 import { useModal } from '../context/ModalContext';
 import { supabase } from '../lib/supabase';
-import { Wallet, Link2, CheckCircle, Eye, X, ExternalLink, Trash2 } from 'lucide-react';
+import { Wallet, Link2, CheckCircle, Eye, X, ExternalLink, Trash2, Loader } from 'lucide-react';
+import Footer from '../components/Footer';
 
 interface Transaction {
   transaction_id: string;
@@ -281,7 +282,7 @@ const TransactionHistoryPage: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f8f9fa' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-4 mx-auto mb-4" style={{ borderColor: '#208756' }}></div>
+          <Loader className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: '#208756' }} />
           <p style={{ color: '#666666' }}>Loading blockchain transactions...</p>
         </div>
       </div>
@@ -306,7 +307,7 @@ const TransactionHistoryPage: React.FC = () => {
             </p>
             <p className="text-xs flex items-center gap-2" style={{ color: '#666666' }}>
               <Link2 className="w-3 h-3" />
-              Smart Contract: <span className="font-mono">0x3F1fa083D1103e6fea9e3Dd6c1E95b4505Ac6564</span> (Sepolia)
+              Smart Contract: <span className="font-mono">0x7597d6fe0329aF3DD4b47E7874f1745ADa9C9AaE</span> (Sepolia)
             </p>
           </div>
         </div>
@@ -664,6 +665,7 @@ const TransactionHistoryPage: React.FC = () => {
           </div>
         </div>
       )}
+      <Footer />
     </div>
   );
 };

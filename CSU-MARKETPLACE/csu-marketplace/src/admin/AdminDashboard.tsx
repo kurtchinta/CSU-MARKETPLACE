@@ -1,1072 +1,1770 @@
-import React, { useState, useEffect } from 'react';
-import { productService, type Product } from '../services/productService';
-import { useModal } from '../context/ModalContext';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import Footer from '../components/Footer';
+import {
+  BarChart3, TrendingUp, Users, Package, CheckCircle,
+  AlertCircle, Activity, Search, RefreshCw, Download,
+  ArrowUpRight, ArrowDownRight, Zap, Eye, Star,
+  ThumbsUp, ThumbsDown, XCircle, Copy, ExternalLink, Check, Trash2, Edit
+} from 'lucide-react';
+import {
+  BarChart, Bar, PieChart, Pie, LineChart, Line,
+  Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart
+} from 'recharts';
+import type {
+  PlatformOverview,
+  RecentTransaction,
+  UserActivity,
+  PendingProduct,
+  RevenueData,
+  UserGrowthData,
+  TopSellerData,
+  TransactionStatusData,
+  ProductTrendData,
+  DailyPlatformMetrics,
+  MonthlyCategoryPareto
+} from '../services/adminService';
+import { adminService } from '../services/adminService';
 import ImageCarousel from '../components/ImageCarousel';
 
-interface DashboardStats {
-  totalUsers: number;
-  totalProducts: number;
-  pendingProducts: number;
-  approvedProducts: number;
-  rejectedProducts: number;
-  totalTransactions: number;
+const ADMIN_GREEN = '#208756';
+const ADMIN_COLORS = [
+  ADMIN_GREEN,
+  '#0891b2',
+  '#7c3aed',
+  '#db2777',
+  '#ea580c',
+  '#059669'
+];
+
+// No duplicate interfaces - all imported from adminService via type imports
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// KPI CARD COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+interface KpiCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  subtext?: string;
+  trend?: number;
+  loading?: boolean;
 }
 
-interface PlatformOverview {
-  total_users: number;
-  active_users_7d: number;
-  total_products: number;
-  approved_products: number;
-  pending_products: number;
-  rejected_products: number;
-  total_transactions: number;
-  completed_transactions: number;
-  pending_transactions: number;
-  cancelled_transactions: number;
-  total_revenue: number;
-  revenue_7d: number;
-  revenue_30d: number;
-  avg_transaction_value: number;
-  total_reviews: number;
-  avg_platform_rating: number;
-  last_updated: string;
-}
-
-interface RecentTransaction {
-  transaction_id: string;
-  buyer_username: string;
-  buyer_name: string;
-  seller_username: string;
-  seller_name: string;
-  product_name: string;
-  category_name: string;
-  item_price: number;
-  quantity: number;
-  total_amount: number;
-  transaction_status: string;
-  listing_type: string;
-  created_at: string;
-  completed_at: string | null;
-  status_badge: string;
-  status_color: string;
-}
-
-interface FunnelStage {
-  stage: string;
-  stage_order: number;
-  count: number;
-  percentage: number;
-}
-
-interface ProductTrend {
-  date: string;
-  total: number;
-  approved: number;
-  pending: number;
-  rejected: number;
-  for_sale: number;
-  for_rent: number;
-  services: number;
-}
-
-const AdminDashboard: React.FC = () => {
-  const { showSuccess, showError, showWarning } = useModal();
-
-  useEffect(() => {
-    document.title = 'Admin Dashboard - CSU Marketplace';
-  }, []);
-
-  const [stats, setStats] = useState<DashboardStats>({
-    totalUsers: 0,
-    totalProducts: 0,
-    pendingProducts: 0,
-    approvedProducts: 0,
-    rejectedProducts: 0,
-    totalTransactions: 0
-  });
-  const [pendingProducts, setPendingProducts] = useState<Product[]>([]);
-  const [approvedProducts, setApprovedProducts] = useState<Product[]>([]);
-  const [rejectedProducts, setRejectedProducts] = useState<Product[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
-  const [platformOverview, setPlatformOverview] = useState<PlatformOverview | null>(null);
-  const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
-  const [funnelData, setFunnelData] = useState<FunnelStage[]>([]);
-  const [productTrend, setProductTrend] = useState<ProductTrend[]>([]);
-  const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'transactions' | 'funnel' | 'trends'>('overview');
-
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
-    setLoading(true);
-    try {
-      await Promise.all([
-        loadStats(),
-        loadPendingProducts(),
-        loadApprovedProducts(),
-        loadRejectedProducts(),
-        loadPlatformOverview(),
-        loadRecentTransactions(),
-        loadFunnelData(),
-        loadProductTrend()
-      ]);
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      showError('Error', 'Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadStats = async () => {
-    try {
-      if (!supabase) return;
-
-      // Fetch total users
-      const { count: usersCount } = await supabase
-        .from('users')
-        .select('*', { count: 'exact', head: true });
-
-      // Fetch product stats
-      const { data: products } = await supabase
-        .from('products')
-        .select('status');
-
-      const pendingCount = products?.filter(p => p.status.toUpperCase() === 'PENDING').length || 0;
-      const approvedCount = products?.filter(p => p.status.toUpperCase() === 'APPROVED').length || 0;
-      const rejectedCount = products?.filter(p => p.status.toUpperCase() === 'REJECTED').length || 0;
-
-      console.log('📊 Dashboard Stats:', { totalProducts: products?.length, pendingCount, approvedCount, rejectedCount });
-
-      // Fetch transaction count
-      const { count: transactionsCount } = await supabase
-        .from('transactions')
-        .select('*', { count: 'exact', head: true });
-
-      setStats({
-        totalUsers: usersCount || 0,
-        totalProducts: products?.length || 0,
-        pendingProducts: pendingCount,
-        approvedProducts: approvedCount,
-        rejectedProducts: rejectedCount,
-        totalTransactions: transactionsCount || 0
-      });
-    } catch (error) {
-      console.error('Error loading stats:', error);
-    }
-  };
-
-  const loadPendingProducts = async () => {
-    try {
-      console.log('🔄 Loading pending products from all users...');
-      const result = await productService.getProducts({ status: 'PENDING' });
-      if (result.success && result.data) {
-        console.log(`✅ Found ${result.data.length} pending products`);
-        setPendingProducts(result.data);
-      } else {
-        console.warn('⚠️ No pending products found or error:', result.error);
-      }
-    } catch (error) {
-      console.error('❌ Error loading pending products:', error);
-    }
-  };
-
-  const loadApprovedProducts = async () => {
-    try {
-      console.log('🔄 Loading approved products from all users...');
-      const result = await productService.getProducts({ status: 'APPROVED' });
-      if (result.success && result.data) {
-        console.log(`✅ Found ${result.data.length} approved products`);
-        setApprovedProducts(result.data);
-      } else {
-        console.warn('⚠️ No approved products found or error:', result.error);
-      }
-    } catch (error) {
-      console.error('❌ Error loading approved products:', error);
-    }
-  };
-
-  const loadRejectedProducts = async () => {
-    try {
-      console.log('🔄 Loading rejected products from all users...');
-      const result = await productService.getProducts({ status: 'REJECTED' });
-      if (result.success && result.data) {
-        console.log(`✅ Found ${result.data.length} rejected products`);
-        setRejectedProducts(result.data);
-      } else {
-        console.warn('⚠️ No rejected products found or error:', result.error);
-      }
-    } catch (error) {
-      console.error('❌ Error loading rejected products:', error);
-    }
-  };
-
-  const loadPlatformOverview = async () => {
-    try {
-      if (!supabase) return;
-      
-      const { data, error } = await supabase
-        .from('admin_view_platform_overview')
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      if (data) {
-        setPlatformOverview(data);
-        console.log('✅ Platform overview loaded:', data);
-      }
-    } catch (error) {
-      console.error('❌ Error loading platform overview:', error);
-    }
-  };
-
-  const loadRecentTransactions = async () => {
-    try {
-      if (!supabase) return;
-      
-      const { data, error } = await supabase
-        .from('admin_view_recent_transactions')
-        .select('*')
-        .limit(10);
-
-      if (error) throw error;
-      if (data) {
-        setRecentTransactions(data);
-        console.log('✅ Recent transactions loaded:', data.length);
-      }
-    } catch (error) {
-      console.error('❌ Error loading recent transactions:', error);
-    }
-  };
-
-  const loadFunnelData = async () => {
-    try {
-      if (!supabase) return;
-      
-      const { data, error } = await supabase
-        .from('mv_transaction_funnel')
-        .select('*')
-        .order('stage_order', { ascending: true });
-
-      if (error) throw error;
-      if (data) {
-        setFunnelData(data);
-        console.log('✅ Funnel data loaded:', data.length);
-      }
-    } catch (error) {
-      console.error('❌ Error loading funnel data:', error);
-    }
-  };
-
-  const loadProductTrend = async () => {
-    try {
-      if (!supabase) return;
-      
-      const { data, error } = await supabase
-        .from('analytics_view_product_trend')
-        .select('*')
-        .order('date', { ascending: true })
-        .limit(30);
-
-      if (error) throw error;
-      if (data) {
-        setProductTrend(data);
-        console.log('✅ Product trend loaded:', data.length);
-      }
-    } catch (error) {
-      console.error('❌ Error loading product trend:', error);
-    }
-  };
-
-  const handleApproveProduct = async (product: Product) => {
-    setShowProductModal(false);
-    showWarning(
-      'Approve Product',
-      `Are you sure you want to approve "${product.product_name}"?\n\nThis will make the product visible to all users in the marketplace.`,
-      async () => {
-        setActionLoading(true);
-        try {
-          console.log(`✅ Approving product: ${product.product_id} - ${product.product_name}`);
-          const result = await productService.updateProductStatus(product.product_id, 'APPROVED' as any);
-          if (result.success) {
-            showSuccess('Product Approved', `"${product.product_name}" has been approved and is now visible in the marketplace.`);
-            await loadDashboardData();
-          } else {
-            showError('Approval Failed', result.error || 'Failed to approve product');
-          }
-        } catch (error: any) {
-          console.error('Error approving product:', error);
-          showError('Error', error.message || 'An error occurred while approving the product');
-        } finally {
-          setActionLoading(false);
-        }
-      }
-    );
-  };
-
-  const handleRejectProduct = async (product: Product) => {
-    setShowProductModal(false);
-    showWarning(
-      'Reject Product',
-      `Are you sure you want to reject "${product.product_name}"?\n\nThe seller will be notified and the product will not be visible in the marketplace.`,
-      async () => {
-        setActionLoading(true);
-        try {
-          console.log(`❌ Rejecting product: ${product.product_id} - ${product.product_name}`);
-          const result = await productService.updateProductStatus(product.product_id, 'REJECTED' as any);
-          if (result.success) {
-            showSuccess('Product Rejected', `"${product.product_name}" has been rejected.`);
-            await loadDashboardData();
-          } else {
-            showError('Rejection Failed', result.error || 'Failed to reject product');
-          }
-        } catch (error: any) {
-          console.error('Error rejecting product:', error);
-          showError('Error', error.message || 'An error occurred while rejecting the product');
-        } finally {
-          setActionLoading(false);
-        }
-      }
-    );
-  };
-
-  const handleDeleteProduct = async (product: Product) => {
-    setShowProductModal(false);
-    showWarning(
-      'Delete Product',
-      `Are you sure you want to permanently delete "${product.product_name}"?\n\nThis action cannot be undone and will remove:\n• The product listing\n• All associated images\n• Product data`,
-      async () => {
-        setActionLoading(true);
-        try {
-          const result = await productService.adminDeleteProduct(product.product_id);
-          if (result.success) {
-            showSuccess('Product Deleted', `"${product.product_name}" has been permanently deleted.`);
-            await loadDashboardData();
-          } else {
-            showError('Delete Failed', result.error || 'Failed to delete product');
-          }
-        } catch (error: any) {
-          console.error('Error deleting product:', error);
-          showError('Error', error.message || 'An error occurred while deleting the product');
-        } finally {
-          setActionLoading(false);
-        }
-      }
-    );
-  };
-
-  const formatPrice = (price: number) => {
-    return `₱${price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
-  };
-
-  const openProductModal = (product: Product) => {
-    setSelectedProduct(product);
-    setShowProductModal(true);
-  };
-
-  const closeProductModal = () => {
-    setShowProductModal(false);
-    setSelectedProduct(null);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 mx-auto mb-4" style={{ borderBottomColor: '#208756' }}></div>
-          <p className="text-gray-600 font-semibold">Loading dashboard...</p>
+const KpiCard: React.FC<KpiCardProps> = ({
+  icon,
+  label,
+  value,
+  subtext,
+  trend,
+  loading = false
+}) => (
+  <div className="group bg-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300 border border-gray-100 hover:border-gray-200 overflow-hidden relative" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+    {/* Animated background effect */}
+    <div className="absolute inset-0 bg-gradient-to-br from-gray-50 via-transparent to-gray-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+    
+    <div className="relative z-10">
+      <div className="flex items-start justify-between mb-4">
+        <div
+          className="p-4 rounded-xl group-hover:scale-110 transition-transform duration-300"
+          style={{ backgroundColor: `${ADMIN_GREEN}15` }}
+        >
+          <div style={{ color: ADMIN_GREEN }} className="text-2xl">
+            {icon}
+          </div>
         </div>
+        {trend !== undefined && (
+          <div
+            className="flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-lg"
+            style={{
+              backgroundColor: trend >= 0 ? '#ecfdf5' : '#fef2f2',
+              color: trend >= 0 ? '#059669' : '#dc2626'
+            }}
+          >
+            {trend >= 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+            {Math.abs(trend)}%
+          </div>
+        )}
       </div>
-    );
-  }
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{label}</h3>
+      <p className="text-4xl font-bold text-gray-900 mb-2">
+        {loading ? '—' : typeof value === 'number' ? value.toLocaleString() : value}
+      </p>
+      {subtext && <p className="text-xs text-gray-500 font-medium">{subtext}</p>}
+    </div>
+  </div>
+);
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-8 border border-gray-200">
-            <h1 className="text-3xl font-bold mb-2" style={{ color: '#208756' }}>Admin Dashboard</h1>
-            <p className="text-gray-600">Manage marketplace products and users</p>
+// ═══════════════════════════════════════════════════════════════════════════════════
+// CHARTS SECTION
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+interface ChartsSectionProps {
+  revenueData: RevenueData[];
+  userGrowthData: UserGrowthData[];
+  topSellersData: TopSellerData[];
+  transactionStatusData: TransactionStatusData[];
+  productTrendData: ProductTrendData[];
+  dailyMetrics: DailyPlatformMetrics | null;
+  categoryPareto: MonthlyCategoryPareto[];
+}
+
+const ChartsSection: React.FC<ChartsSectionProps> = ({
+  topSellersData,
+  transactionStatusData,
+  productTrendData,
+  dailyMetrics,
+  categoryPareto
+}) => (
+  <div className="space-y-8">
+    {/* 2-Column Charts Grid */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* Product Trend Chart */}
+      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm hover:shadow-lg transition-all" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+              <div className="bg-green-100 p-2.5 rounded-lg">
+                <TrendingUp size={20} style={{ color: ADMIN_GREEN }} />
+              </div>
+              Product Listing Trend
+            </h3>
+            <p className="text-sm text-gray-600">Product creation trends (Last 90 days)</p>
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={productTrendData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" stroke="#9ca3af" angle={-45} textAnchor="end" height={80} />
+            <YAxis stroke="#9ca3af" />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#fff',
+                border: `2px solid ${ADMIN_GREEN}`,
+                borderRadius: '12px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+              }}
+            />
+            <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '12px' }} />
+            <Line type="monotone" dataKey="new_products" stroke={ADMIN_GREEN} strokeWidth={2} dot={{ fill: ADMIN_GREEN, r: 3 }} name="New" />
+            <Line type="monotone" dataKey="approved_products" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3 }} name="Approved" />
+            <Line type="monotone" dataKey="pending_products" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b', r: 3 }} name="Pending" />
+            <Line type="monotone" dataKey="rejected_products" stroke="#ef4444" strokeWidth={2} dot={{ fill: '#ef4444', r: 3 }} name="Rejected" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Listing Type Distribution Chart */}
+      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm hover:shadow-lg transition-all" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+              <div className="bg-indigo-100 p-2.5 rounded-lg">
+                <BarChart3 size={20} style={{ color: '#6366f1' }} />
+              </div>
+              Listing Type Distribution
+            </h3>
+            <p className="text-sm text-gray-600">Product breakdown by type</p>
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={productTrendData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" stroke="#9ca3af" angle={-45} textAnchor="end" height={80} />
+            <YAxis stroke="#9ca3af" />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#fff',
+                border: `2px solid ${ADMIN_GREEN}`,
+                borderRadius: '12px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+              }}
+            />
+            <Legend wrapperStyle={{ paddingTop: '15px', fontSize: '12px' }} />
+            <Bar dataKey="for_sale" fill="#3b82f6" name="For Sale" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="for_rent" fill="#8b5cf6" name="For Rent" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="services" fill="#ec4899" name="Services" radius={[8, 8, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Top Sellers Chart */}
+      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm hover:shadow-lg transition-all" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+              <div className="bg-amber-100 p-2.5 rounded-lg">
+                <BarChart3 size={20} style={{ color: '#b45309' }} />
+              </div>
+              Top 8 Sellers
+            </h3>
+            <p className="text-sm text-gray-600">Ranked by total revenue</p>
           </div>
         </div>
         
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-gray-600 text-sm font-semibold">Total Users</h3>
-                <p className="text-3xl font-bold mt-2" style={{ color: '#208756' }}>{stats.totalUsers}</p>
-              </div>
-              <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f0f8f6' }}>
-                <svg className="w-6 h-6" style={{ color: '#208756' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-gray-600 text-sm font-semibold">Total Products</h3>
-                <p className="text-3xl font-bold mt-2" style={{ color: '#208756' }}>{stats.totalProducts}</p>
-                <div className="mt-2 flex gap-2 text-xs">
-                  <span className="text-gray-600">{stats.approvedProducts} Approved</span>
-                  <span className="text-gray-400">•</span>
-                  <span className="text-gray-600">{stats.rejectedProducts} Rejected</span>
+        {topSellersData.length > 0 ? (
+          <div className="space-y-4">
+            {/* Bar Chart */}
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topSellersData.slice(0, 8)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="username" stroke="#9ca3af" angle={-45} textAnchor="end" height={80} fontSize={12} />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: `2px solid ${ADMIN_GREEN}`,
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  }}
+                  formatter={(value: any, name: string) => {
+                    if (name === 'total_revenue') return [`₱${Number(value).toLocaleString('en-PH')}`, 'Total Revenue'];
+                    return value;
+                  }}
+                  labelFormatter={(label) => `Seller: ${label}`}
+                />
+                <Bar dataKey="total_revenue" fill={ADMIN_GREEN} name="Revenue" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+
+            {/* Seller Details Table */}
+            <div className="mt-6 space-y-2 max-h-64 overflow-y-auto">
+              <div className="text-xs font-semibold text-gray-600 uppercase tracking-wider px-2">Top Performers</div>
+              {topSellersData.slice(0, 8).map((seller, idx) => (
+                <div key={seller.user_id} className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100 hover:border-gray-200 transition-all">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full font-bold text-xs text-white" style={{ backgroundColor: ADMIN_GREEN }}>
+                        {idx + 1}
+                      </span>
+                      <p className="text-sm font-bold text-gray-900 truncate">{seller.full_name}</p>
+                      <span className="text-xs text-gray-500">@{seller.username}</span>
+                    </div>
+                    <div className="flex items-center gap-3 ml-8">
+                      {/* Revenue Badge */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-semibold text-gray-700">₱{(seller.total_revenue / 1000).toFixed(1)}K</span>
+                      </div>
+                      {/* Rating Badge */}
+                      <div className="flex items-center gap-0.5">
+                        <svg className="w-3.5 h-3.5 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                          <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                        </svg>
+                        <span className="text-xs font-semibold text-gray-700">
+                          {seller.average_seller_rating > 0 ? seller.average_seller_rating.toFixed(1) : 'N/A'}
+                        </span>
+                      </div>
+                      {/* Sales Count Badge */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                          {seller.total_products_sold} sold
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f0f8f6' }}>
-                <svg className="w-6 h-6" style={{ color: '#208756' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
-                </svg>
-              </div>
+              ))}
             </div>
           </div>
-          
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-gray-600 text-sm font-semibold">Pending Approvals</h3>
-                <p className="text-3xl font-bold mt-2" style={{ color: '#208756' }}>{stats.pendingProducts}</p>
-                {stats.pendingProducts > 0 && (
-                  <p className="text-sm text-gray-500 mt-1">Requires attention</p>
-                )}
+        ) : (
+          <div className="flex items-center justify-center py-12 text-gray-500">
+            <p>No seller data available</p>
+          </div>
+        )}
+      </div>
+
+      {/* Transaction Status Distribution */}
+      <div className="lg:col-span-1 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm hover:shadow-lg transition-all" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+              <div className="bg-purple-100 p-2.5 rounded-lg">
+                <Activity size={20} style={{ color: '#7c3aed' }} />
               </div>
-              <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f0f8f6' }}>
-                <svg className="w-6 h-6" style={{ color: '#208756' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </div>
-            </div>
+              Transaction Status
+            </h3>
+            <p className="text-sm text-gray-600">Status breakdown</p>
           </div>
         </div>
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={transactionStatusData as any}
+              dataKey="count"
+              nameKey="transaction_status"
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={100}
+              label={(entry: any) => `${entry.transaction_status}\n${entry.percentage}%`}
+              labelLine={false}
+            >
+              {transactionStatusData.map((_, index) => (
+                <Cell key={`cell-${index}`} fill={ADMIN_COLORS[index % ADMIN_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#fff',
+                border: `2px solid ${ADMIN_GREEN}`,
+                borderRadius: '12px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
 
-        {/* Enhanced Analytics Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-bold" style={{ color: '#208756' }}>Platform Analytics</h2>
-          </div>
-
-          {/* Analytics Tabs */}
-          <div className="border-b border-gray-200 bg-white">
-            <div className="flex space-x-1 p-4">
-              <button
-                onClick={() => setAnalyticsTab('overview')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  analyticsTab === 'overview'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={analyticsTab === 'overview' ? { backgroundColor: '#208756' } : {}}
-              >
-                Overview
-              </button>
-              <button
-                onClick={() => setAnalyticsTab('transactions')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  analyticsTab === 'transactions'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={analyticsTab === 'transactions' ? { backgroundColor: '#208756' } : {}}
-              >
-                Transactions
-              </button>
-              <button
-                onClick={() => setAnalyticsTab('funnel')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  analyticsTab === 'funnel'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={analyticsTab === 'funnel' ? { backgroundColor: '#208756' } : {}}
-              >
-                Funnel
-              </button>
-              <button
-                onClick={() => setAnalyticsTab('trends')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  analyticsTab === 'trends'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={analyticsTab === 'trends' ? { backgroundColor: '#208756' } : {}}
-              >
-                Trends
-              </button>
-            </div>
-          </div>
-
-          <div className="p-6">
-            {/* Overview Tab - Platform KPIs */}
-            {analyticsTab === 'overview' && platformOverview && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Platform Overview</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-1">Total Revenue</div>
-                    <div className="text-2xl font-bold" style={{ color: '#208756' }}>{formatPrice(platformOverview.total_revenue)}</div>
-                    <div className="text-xs text-gray-500 mt-1">Lifetime</div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-1">Revenue (30d)</div>
-                    <div className="text-2xl font-bold" style={{ color: '#208756' }}>{formatPrice(platformOverview.revenue_30d)}</div>
-                    <div className="text-xs text-gray-500 mt-1">Last 30 days</div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-1">Avg Transaction</div>
-                    <div className="text-2xl font-bold" style={{ color: '#208756' }}>{formatPrice(platformOverview.avg_transaction_value)}</div>
-                    <div className="text-xs text-gray-500 mt-1">Per transaction</div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-1">Platform Rating</div>
-                    <div className="text-2xl font-bold" style={{ color: '#208756' }}>{platformOverview.avg_platform_rating?.toFixed(1) || '0.0'}</div>
-                    <div className="text-xs text-gray-500 mt-1">{platformOverview.total_reviews || 0} reviews</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-2">User Activity</div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Total Users:</span>
-                        <span className="font-semibold">{platformOverview.total_users}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Active (7d):</span>
-                        <span className="font-semibold">{platformOverview.active_users_7d}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-2">Product Stats</div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Total Products:</span>
-                        <span className="font-semibold">{platformOverview.total_products}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Approved:</span>
-                        <span className="font-semibold">{platformOverview.approved_products}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Pending:</span>
-                        <span className="font-semibold">{platformOverview.pending_products}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <div className="text-sm text-gray-600 mb-2">Transactions</div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Total:</span>
-                        <span className="font-semibold">{platformOverview.total_transactions}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Completed:</span>
-                        <span className="font-semibold">{platformOverview.completed_transactions}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">Pending:</span>
-                        <span className="font-semibold">{platformOverview.pending_transactions}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+      {/* Daily Metrics Pareto Chart - Simplified */}
+      {dailyMetrics && (
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm hover:shadow-lg transition-all" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+          <div className="mb-8">
+            <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+              <div className="bg-cyan-100 p-2.5 rounded-lg">
+                <Zap size={20} style={{ color: '#0891b2' }} />
               </div>
-            )}
+              Daily Metrics Analysis
+            </h3>
+            <p className="text-sm text-gray-600">Today's top metrics with cumulative impact</p>
+          </div>
+          
+          {(() => {
+            const metricsData = [
+              { name: 'Active Users', value: dailyMetrics?.active_users_24h || 0 },
+              { name: 'New Users', value: dailyMetrics?.new_users_today || 0 },
+              { name: 'Active Listings', value: dailyMetrics?.active_listings || 0 },
+              { name: 'New Listings', value: dailyMetrics?.new_listings_today || 0 },
+              { name: 'Transactions', value: dailyMetrics?.transactions_today || 0 },
+              { name: 'Completed', value: dailyMetrics?.completed_today || 0 },
+              { name: 'Product Views', value: dailyMetrics?.total_product_views || 0 },
+              { name: 'Pending Approval', value: dailyMetrics?.pending_approvals || 0 }
+            ];
+            
+            const sortedData = [...metricsData].sort((a, b) => b.value - a.value);
+            const totalValue = sortedData.reduce((sum, item) => sum + item.value, 0);
+            
+            let cumulativeSum = 0;
+            const chartData = sortedData.map((item) => {
+              cumulativeSum += item.value;
+              return {
+                ...item,
+                percentage: totalValue > 0 ? (item.value / totalValue) * 100 : 0,
+                cumulative: (cumulativeSum / totalValue) * 100
+              };
+            });
 
-            {/* Transactions Tab */}
-            {analyticsTab === 'transactions' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Recent Transactions</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Buyer</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Seller</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Product</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Amount</th>
-                        <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Status</th>
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentTransactions.map((tx) => (
-                        <tr key={tx.transaction_id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-3 px-4">
-                            <div className="text-sm font-semibold text-gray-900">{tx.buyer_name}</div>
-                            <div className="text-xs text-gray-500">@{tx.buyer_username}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-sm font-semibold text-gray-900">{tx.seller_name}</div>
-                            <div className="text-xs text-gray-500">@{tx.seller_username}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="text-sm text-gray-900">{tx.product_name}</div>
-                            <div className="text-xs text-gray-500">{tx.category_name}</div>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="text-sm font-semibold" style={{ color: '#208756' }}>{formatPrice(tx.total_amount)}</div>
-                            <div className="text-xs text-gray-500">x{tx.quantity}</div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold" 
-                                  style={{ backgroundColor: tx.status_color, color: 'white' }}>
-                              {tx.status_badge}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-600">
-                            {new Date(tx.created_at).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {recentTransactions.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">No transactions yet</div>
-                  )}
-                </div>
-              </div>
-            )}
+            return (
+              <div className="space-y-6">
+                {/* Chart */}
+                <ResponsiveContainer width="100%" height={320}>
+                  <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 80 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="name" stroke="#9ca3af" angle={-45} textAnchor="end" height={100} />
+                    <YAxis yAxisId="left" stroke="#9ca3af" />
+                    <YAxis yAxisId="right" orientation="right" stroke={ADMIN_GREEN} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        border: `2px solid ${ADMIN_GREEN}`,
+                        borderRadius: '8px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                      }}
+                      formatter={(value: any, name: string) => {
+                        if (name === 'value') return [value.toLocaleString(), 'Count'];
+                        if (name === 'cumulative') return [`${value.toFixed(1)}%`, 'Cumulative'];
+                        return value;
+                      }}
+                    />
+                    <Legend wrapperStyle={{ paddingTop: '15px' }} />
+                    <Bar yAxisId="left" dataKey="value" fill="#3b82f6" name="value" radius={[6, 6, 0, 0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="cumulative" stroke={ADMIN_GREEN} strokeWidth={2} name="cumulative" dot={{ fill: ADMIN_GREEN, r: 3 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
 
-            {/* Funnel Tab */}
-            {analyticsTab === 'funnel' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Transaction Funnel (Last 30 Days)</h3>
-                <div className="space-y-4">
-                  {funnelData.map((stage) => (
-                    <div key={stage.stage} className="relative">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-gray-700">{stage.stage}</span>
-                        <span className="text-sm text-gray-600">{stage.count.toLocaleString()} ({stage.percentage.toFixed(1)}%)</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
-                        <div 
-                          className="h-3 rounded-full transition-all"
-                          style={{ 
-                            backgroundColor: '#208756',
-                            width: `${stage.percentage}%`
-                          }}
-                        />
-                      </div>
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {chartData.slice(0, 4).map((item, idx) => (
+                    <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <p className="text-xs text-gray-600 font-medium mb-1">{item.name}</p>
+                      <p className="text-lg font-bold text-gray-900">{item.value.toLocaleString()}</p>
+                      <p className="text-xs text-gray-500 mt-1">{item.percentage.toFixed(1)}% share</p>
                     </div>
                   ))}
-                  {funnelData.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">No funnel data available</div>
-                  )}
                 </div>
               </div>
-            )}
-
-            {/* Trends Tab */}
-            {analyticsTab === 'trends' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Product Listing Trends (Last 30 Days)</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Date</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Total</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Approved</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Pending</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Rejected</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">For Sale</th>
-                        <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Services</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productTrend.slice(0, 10).map((trend) => (
-                        <tr key={trend.date} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-3 px-4 text-sm text-gray-900">{new Date(trend.date).toLocaleDateString()}</td>
-                          <td className="py-3 px-4 text-right text-sm font-semibold" style={{ color: '#208756' }}>{trend.total}</td>
-                          <td className="py-3 px-4 text-right text-sm text-gray-600">{trend.approved}</td>
-                          <td className="py-3 px-4 text-right text-sm text-gray-600">{trend.pending}</td>
-                          <td className="py-3 px-4 text-right text-sm text-gray-600">{trend.rejected}</td>
-                          <td className="py-3 px-4 text-right text-sm text-gray-600">{trend.for_sale}</td>
-                          <td className="py-3 px-4 text-right text-sm text-gray-600">{trend.services}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {productTrend.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">No trend data available</div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+            );
+          })()}
         </div>
+      )}
 
-        {/* Product Management Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-xl font-bold" style={{ color: '#208756' }}>Product Management</h2>
-          </div>
-
-          {/* Tabs */}
-          <div className="border-b border-gray-200 bg-white">
-            <div className="flex space-x-1 p-4">
-              <button
-                onClick={() => setActiveTab('pending')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  activeTab === 'pending'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={activeTab === 'pending' ? { backgroundColor: '#208756' } : {}}
-              >
-                Pending ({stats.pendingProducts})
-              </button>
-              <button
-                onClick={() => setActiveTab('approved')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  activeTab === 'approved'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={activeTab === 'approved' ? { backgroundColor: '#208756' } : {}}
-              >
-                Approved ({stats.approvedProducts})
-              </button>
-              <button
-                onClick={() => setActiveTab('rejected')}
-                className={`px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  activeTab === 'rejected'
-                    ? 'text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-                style={activeTab === 'rejected' ? { backgroundColor: '#208756' } : {}}
-              >
-                Rejected ({stats.rejectedProducts})
-              </button>
+      {/* Category Pareto Chart */}
+      {categoryPareto.length > 0 && (
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 p-8 shadow-sm hover:shadow-lg transition-all" style={{ borderTop: `4px solid ${ADMIN_GREEN}` }}>
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                <div className="bg-rose-100 p-2.5 rounded-lg">
+                  <TrendingUp size={20} style={{ color: '#e11d48' }} />
+                </div>
+                Category Pareto Analysis
+              </h3>
+              <p className="text-sm text-gray-600">Revenue distribution by category with cumulative percentage</p>
             </div>
           </div>
+          <ResponsiveContainer width="100%" height={350}>
+            <ComposedChart data={categoryPareto} margin={{ top: 10, right: 30, left: 0, bottom: 80 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="category_name" 
+                stroke="#9ca3af" 
+                angle={-45} 
+                textAnchor="end" 
+                height={100}
+              />
+              <YAxis yAxisId="left" stroke="#9ca3af" label={{ value: 'Revenue (₱)', angle: -90, position: 'insideLeft' }} />
+              <YAxis yAxisId="right" orientation="right" stroke={ADMIN_GREEN} label={{ value: 'Cumulative %', angle: 90, position: 'insideRight' }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: `2px solid ${ADMIN_GREEN}`,
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                }}
+                formatter={(value: any, name: string) => {
+                  if (name === 'monthly_revenue') return [`₱${Number(value).toLocaleString()}`, 'Revenue'];
+                  if (name === 'cumulative_percentage') return [`${value.toFixed(1)}%`, 'Cumulative %'];
+                  return value;
+                }}
+              />
+              <Legend wrapperStyle={{ paddingTop: '20px' }} />
+              <Bar yAxisId="left" dataKey="monthly_revenue" fill="#3b82f6" name="Monthly Revenue" radius={[8, 8, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="cumulative_percentage" stroke={ADMIN_GREEN} strokeWidth={3} name="Cumulative %" dot={{ fill: ADMIN_GREEN, r: 4 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  </div>
+);
 
-          <div className="p-6">
-            {activeTab === 'pending' && pendingProducts.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f0f8f6' }}>
-                  <svg className="w-8 h-8" style={{ color: '#208756' }} fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">All caught up!</h3>
-                <p className="text-gray-500">No pending products to review</p>
-              </div>
-            ) : activeTab === 'pending' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {pendingProducts.map((product) => (
-                  <div 
-                    key={product.product_id}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer"
-                    onClick={() => openProductModal(product)}
-                  >
-                    <div className="relative" style={{ paddingBottom: '75%' }}>
-                      <div className="absolute inset-0">
-                        <ImageCarousel 
-                          images={product.images}
-                          productName={product.product_name}
-                          className="h-full w-full"
-                        />
-                      </div>
-                      <div className="absolute top-3 right-3 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-sm" style={{ backgroundColor: '#208756' }}>
-                        PENDING
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">{product.product_name}</h3>
-                      <p className="text-xs text-gray-500 mb-2">{product.category?.category_name}</p>
-                      <p className="text-lg font-bold mb-2" style={{ color: '#208756' }}>{formatPrice(product.price)}</p>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                        <span>{product.seller?.username}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : activeTab === 'approved' && approvedProducts.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">No approved products</h3>
-                <p className="text-gray-500">Approved products will appear here</p>
-              </div>
-            ) : activeTab === 'approved' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {approvedProducts.map((product) => (
-                  <div 
-                    key={product.product_id}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer"
-                    onClick={() => openProductModal(product)}
-                  >
-                    <div className="relative" style={{ paddingBottom: '75%' }}>
-                      <div className="absolute inset-0">
-                        <ImageCarousel 
-                          images={product.images}
-                          productName={product.product_name}
-                          className="h-full w-full"
-                        />
-                      </div>
-                      <div className="absolute top-3 right-3 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-sm" style={{ backgroundColor: '#208756' }}>
-                        APPROVED
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">{product.product_name}</h3>
-                      <p className="text-xs text-gray-500 mb-2">{product.category?.category_name}</p>
-                      <p className="text-lg font-bold mb-2" style={{ color: '#208756' }}>{formatPrice(product.price)}</p>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                        <span>{product.seller?.username}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : activeTab === 'rejected' && rejectedProducts.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">No rejected products</h3>
-                <p className="text-gray-500">Rejected products will appear here</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {rejectedProducts.map((product) => (
-                  <div 
-                    key={product.product_id}
-                    className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer"
-                    onClick={() => openProductModal(product)}
-                  >
-                    <div className="relative" style={{ paddingBottom: '75%' }}>
-                      <div className="absolute inset-0">
-                        <ImageCarousel 
-                          images={product.images}
-                          productName={product.product_name}
-                          className="h-full w-full"
-                        />
-                      </div>
-                      <div className="absolute top-3 right-3 bg-gray-500 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
-                        REJECTED
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">{product.product_name}</h3>
-                      <p className="text-xs text-gray-500 mb-2">{product.category?.category_name}</p>
-                      <p className="text-lg font-bold mb-2" style={{ color: '#208756' }}>{formatPrice(product.price)}</p>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                        </svg>
-                        <span>{product.seller?.username}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+// ═══════════════════════════════════════════════════════════════════════════════════
+// DATA TABLE COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+interface TableProps {
+  title: string;
+  icon: React.ReactNode;
+  data: any[];
+  loading: boolean;
+  columns: Array<{
+    key: string;
+    label: string;
+    render?: (row: any) => React.ReactNode;
+  }>;
+}
+
+const DataTable: React.FC<TableProps> = ({ title, icon, data, loading, columns }) => {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const itemsPerPage = 10;
+
+  const filtered = data.filter((row) =>
+    columns.some((col) =>
+      String(row[col.key]).toLowerCase().includes(search.toLowerCase())
+    )
+  );
+
+  const paginated = filtered.slice(page * itemsPerPage, (page + 1) * itemsPerPage);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-lg transition-all">
+      {/* Header */}
+      <div className="px-8 py-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-3">
+          <div className="bg-blue-100 p-2.5 rounded-lg">
+            {icon}
+          </div>
+          {title}
+        </h3>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              className="pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+            />
           </div>
         </div>
       </div>
 
-      {/* Product Detail Modal */}
-      {showProductModal && selectedProduct && (
-        <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200" 
-          onClick={() => !actionLoading && closeProductModal()}
-        >
-          <div 
-            className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 animate-in zoom-in duration-200" 
-            onClick={(e) => e.stopPropagation()}
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gradient-to-r from-gray-50 to-gray-50 border-b border-gray-200">
+            <tr>
+              {columns.map((col) => (
+                <th key={col.key} className="px-8 py-4 text-left font-semibold text-gray-700">
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length} className="px-8 py-12 text-center text-gray-500">
+                  Loading...
+                </td>
+              </tr>
+            ) : paginated.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-8 py-12 text-center text-gray-500">
+                  No data available
+                </td>
+              </tr>
+            ) : (
+              paginated.map((row, idx) => (
+                <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  {columns.map((col) => (
+                    <td key={col.key} className="px-8 py-4 text-gray-700">
+                      {col.render ? col.render(row) : row[col.key]}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {filtered.length > itemsPerPage && (
+        <div className="px-8 py-4 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+          <p className="text-sm text-gray-600 font-medium">
+            Showing {page * itemsPerPage + 1} to {Math.min((page + 1) * itemsPerPage, filtered.length)} of {filtered.length}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(Math.max(0, page - 1))}
+              disabled={page === 0}
+              className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 disabled:opacity-50 hover:bg-gray-50 transition-colors"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage(page + 1)}
+              disabled={(page + 1) * itemsPerPage >= filtered.length}
+              className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 disabled:opacity-50 hover:bg-gray-50 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// CONFIRMATION MODAL COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+interface ConfirmationModalProps {
+  isOpen: boolean;
+  type: 'approve' | 'reject';
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  isLoading?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onCancel: () => void;
+}
+
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
+  isOpen,
+  type,
+  title,
+  message,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  isLoading = false,
+  onConfirm,
+  onCancel
+}) => {
+  if (!isOpen) return null;
+
+  const getIcon = () => {
+    return type === 'approve' ? (
+      <CheckCircle size={48} className="text-green-600" />
+    ) : (
+      <XCircle size={48} className="text-red-600" />
+    );
+  };
+
+  const getButtonColor = () => {
+    return type === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700';
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-6 animate-in fade-in zoom-in duration-200">
+        {/* Icon */}
+        <div className="flex justify-center">
+          {getIcon()}
+        </div>
+
+        {/* Content */}
+        <div className="space-y-2 text-center">
+          <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+          <p className="text-gray-600 text-sm leading-relaxed">{message}</p>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3 pt-4">
+          <button
+            onClick={onCancel}
+            disabled={isLoading}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {/* Modal Header */}
-            <div className="sticky top-0 bg-white px-6 py-4 flex justify-between items-center z-10 border-b border-gray-200 rounded-t-lg">
-              <h2 className="text-xl font-bold text-[#208756]">Review Product</h2>
-              <button
-                onClick={() => !actionLoading && closeProductModal()}
-                disabled={actionLoading}
-                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+            {cancelText}
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isLoading}
+            className={`flex-1 px-4 py-2 ${getButtonColor()} text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}
+          >
+            {isLoading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Processing...
+              </>
+            ) : (
+              confirmText
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* Image Carousel */}
-              <div className="mb-6">
-                <div className="relative w-full bg-gray-900 rounded-lg overflow-hidden" style={{ paddingBottom: '56.25%' }}>
-                  <div className="absolute inset-0">
-                    <ImageCarousel 
-                      images={selectedProduct.images}
-                      productName={selectedProduct.product_name}
-                      className="h-full w-full"
-                    />
-                  </div>
-                </div>
+// ═══════════════════════════════════════════════════════════════════════════════════
+// LOADING MODAL COMPONENT (FOR REFRESH)
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+interface LoadingModalProps {
+  isOpen: boolean;
+  message?: string;
+}
+
+const LoadingModal: React.FC<LoadingModalProps> = ({ isOpen, message = 'Refreshing data...' }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4w bg-opacity-30 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 space-y-6 animate-in fade-in zoom-in duration-200">
+        {/* Spinner Icon */}
+        <div className="flex justify-center">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-green-600 border-r-green-600 animate-spin" style={{ borderTopColor: '#208756', borderRightColor: '#208756' }}></div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="space-y-3 text-center">
+          <h2 className="text-2xl font-bold text-gray-900">Refreshing Data</h2>
+          <p className="text-gray-600 text-sm leading-relaxed">{message}</p>
+          <p className="text-xs text-gray-500 font-medium">Please wait, this may take a moment...</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// MAIN ADMIN DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+const AdminDashboard: React.FC = () => {
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshModalOpen, setRefreshModalOpen] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState<'overview' | 'management'>('overview');
+  const [activeDataTab, setActiveDataTab] = useState<'products' | 'transactions' | 'activity'>('products');
+  const [activeKpiTab, setActiveKpiTab] = useState<'users' | 'products' | 'transactions' | 'revenue'>('users');
+
+  // Platform Overview
+  const [overview, setOverview] = useState<PlatformOverview | null>(null);
+  const [productsSold, setProductsSold] = useState<number>(0);
+  const [blockchainPending, setBlockchainPending] = useState<number>(0);
+  const [blockchainConfirmed, setBlockchainConfirmed] = useState<number>(0);
+  const [totalPendingTransactions, setTotalPendingTransactions] = useState<number>(0);
+  const [totalAcceptedTransactions, setTotalAcceptedTransactions] = useState<number>(0);
+
+  // Transaction Data
+  const [transactions, setTransactions] = useState<RecentTransaction[]>([]);
+  const [userActivity, setUserActivity] = useState<UserActivity[]>([]);
+  const [pendingProducts, setPendingProducts] = useState<PendingProduct[]>([]);
+
+  // Analytics Data
+  const [revenueData, setRevenueData] = useState<RevenueData[]>([]);
+  const [userGrowthData, setUserGrowthData] = useState<UserGrowthData[]>([]);
+  const [topSellersData, setTopSellersData] = useState<TopSellerData[]>([]);
+  const [transactionStatusData, setTransactionStatusData] = useState<TransactionStatusData[]>([]);
+  const [productTrendData, setProductTrendData] = useState<ProductTrendData[]>([]);
+  const [dailyMetrics, setDailyMetrics] = useState<DailyPlatformMetrics | null>(null);
+  const [categoryPareto, setCategoryPareto] = useState<MonthlyCategoryPareto[]>([]);
+
+  // Pending Product Details
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [productImages, setProductImages] = useState<Record<number, string[]>>({});
+  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'approve' | 'reject';
+    productId: number | null;
+    productName: string;
+  }>({
+    isOpen: false,
+    type: 'approve',
+    productId: null,
+    productName: ''
+  });
+
+  // Copy to clipboard state
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // User management state
+  const [userActionModal, setUserActionModal] = useState<{
+    isOpen: boolean;
+    type: 'promote' | 'delete';
+    userId: number | null;
+    username: string;
+  }>({
+    isOpen: false,
+    type: 'promote',
+    userId: null,
+    username: ''
+  });
+  const [performingAction, setPerformingAction] = useState<number | null>(null);
+
+  const loadAllData = useCallback(async () => {
+    try {
+      const [
+        overviewData,
+        transactionsData,
+        userActivityData,
+        pendingProductsData,
+        revenueData,
+        userGrowthData,
+        topSellersData,
+        statusData,
+        productTrendDataResponse,
+        productsSoldData,
+        blockchainPendingData,
+        blockchainConfirmedData,
+        pendingTransactionsData,
+        acceptedTransactionsData,
+        dailyMetricsData,
+        categoryParetoData
+      ] = await Promise.all([
+        adminService.getPlatformOverview(),
+        adminService.getRecentTransactions(20),
+        adminService.getUserActivity(20),
+        adminService.getPendingProducts(20),
+        adminService.getRevenueTrend(),
+        adminService.getUserGrowth(),
+        adminService.getTopSellers(10),
+        adminService.getTransactionStatusDistribution(),
+        adminService.getProductTrend(),
+        adminService.getTotalProductsSold(),
+        adminService.getBlockchainPendingCount(),
+        adminService.getBlockchainConfirmedCount(),
+        adminService.getTotalPendingTransactions(),
+        adminService.getTotalAcceptedTransactions(),
+        adminService.getDailyPlatformMetrics(),
+        adminService.getMonthlyCategoryPareto()
+      ]);
+
+      if (overviewData) setOverview(overviewData);
+      if (transactionsData) setTransactions(transactionsData);
+      if (userActivityData) setUserActivity(userActivityData);
+      if (pendingProductsData) setPendingProducts(pendingProductsData);
+      if (productsSoldData) setProductsSold(productsSoldData);
+      setBlockchainPending(blockchainPendingData);
+      setBlockchainConfirmed(blockchainConfirmedData);
+      setTotalPendingTransactions(pendingTransactionsData);
+      setTotalAcceptedTransactions(acceptedTransactionsData);
+      
+      if (revenueData && revenueData.length > 0) {
+        const chartData = revenueData.map((d: RevenueData) => ({
+          date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          revenue: d.revenue,
+          transactions: d.transactions,
+          avg_value: d.avg_value
+        }));
+        setRevenueData(chartData);
+      }
+      
+      if (userGrowthData && userGrowthData.length > 0) {
+        const chartData = userGrowthData.map((d: UserGrowthData) => ({
+          date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          new_users: d.new_users,
+          cumulative_users: d.cumulative_users
+        }));
+        setUserGrowthData(chartData);
+      }
+      
+      if (topSellersData) setTopSellersData(topSellersData);
+      if (statusData) setTransactionStatusData(statusData);
+      if (productTrendDataResponse && productTrendDataResponse.length > 0) {
+        const chartData = productTrendDataResponse.map((d: ProductTrendData) => ({
+          date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          new_products: d.new_products,
+          cumulative_products: d.cumulative_products,
+          approved_products: d.approved_products,
+          pending_products: d.pending_products,
+          rejected_products: d.rejected_products,
+          for_sale: d.for_sale,
+          for_rent: d.for_rent,
+          services: d.services
+        }));
+        setProductTrendData(chartData);
+      }
+
+      if (dailyMetricsData) setDailyMetrics(dailyMetricsData);
+      if (categoryParetoData && categoryParetoData.length > 0) setCategoryPareto(categoryParetoData);
+
+      setLoading(false);
+    } catch (error) {
+      console.error('❌ Error loading dashboard data:', error);
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchProductImages = useCallback(async (productId: number) => {
+    try {
+      if (!supabase) {
+        console.error('❌ Supabase not initialized');
+        return [];
+      }
+
+      console.log(`🔍 Fetching images from product_images table for product ${productId}...`);
+
+      // Query database
+      const { data: imagesData, error } = await supabase!
+        .from('product_images')
+        .select('image_id, storage_path, image_order')
+        .eq('product_id', productId)
+        .order('image_order', { ascending: true });
+
+      if (error) {
+        console.error(`❌ Database error for product ${productId}:`, error);
+        setProductImages((prev) => ({ ...prev, [productId]: [] }));
+        return [];
+      }
+
+      if (!imagesData || imagesData.length === 0) {
+        console.warn(`⚠️ No images found in product_images table for product ${productId}`);
+        setProductImages((prev) => ({ ...prev, [productId]: [] }));
+        return [];
+      }
+
+      console.log(`📝 Found ${imagesData.length} image records for product ${productId}`);
+
+      // Store in state - keeping as objects for ImageCarousel compatibility
+      setProductImages((prev) => ({
+        ...prev,
+        [productId]: imagesData as any
+      }));
+
+      return imagesData;
+    } catch (error) {
+      console.error(`❌ Error fetching images for product ${productId}:`, error);
+      return [];
+    }
+  }, []);
+
+  const handleApproveProduct = useCallback((productId: number) => {
+    const product = pendingProducts.find(p => p.product_id === productId);
+    if (product) {
+      setConfirmModal({
+        isOpen: true,
+        type: 'approve',
+        productId,
+        productName: product.product_name
+      });
+    }
+  }, [pendingProducts]);
+
+  const confirmApproveProduct = useCallback(async () => {
+    if (!confirmModal.productId) return;
+    
+    setApprovingId(confirmModal.productId);
+    try {
+      console.log(`✅ Approving product ${confirmModal.productId}...`);
+      
+      const { data, error } = await supabase!
+        .from('products')
+        .update({ status: 'APPROVED' })
+        .eq('product_id', confirmModal.productId)
+        .select();
+
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
+
+      console.log(`✅ Product ${confirmModal.productId} approved successfully`, data);
+      
+      // Wait a moment then refresh data to ensure database is updated
+      setTimeout(async () => {
+        await loadAllData();
+      }, 500);
+      
+      setSelectedProductId(null);
+      setConfirmModal({ isOpen: false, type: 'approve', productId: null, productName: '' });
+    } catch (error) {
+      console.error('❌ Error approving product:', error);
+      alert('❌ Failed to approve product. Please try again.');
+    } finally {
+      setApprovingId(null);
+    }
+  }, [confirmModal.productId, loadAllData]);
+
+  const handleRejectProduct = useCallback((productId: number) => {
+    const product = pendingProducts.find(p => p.product_id === productId);
+    if (product) {
+      setConfirmModal({
+        isOpen: true,
+        type: 'reject',
+        productId,
+        productName: product.product_name
+      });
+    }
+  }, [pendingProducts]);
+
+  const confirmRejectProduct = useCallback(async () => {
+    if (!confirmModal.productId) return;
+    
+    setRejectingId(confirmModal.productId);
+    try {
+      console.log(`❌ Rejecting product ${confirmModal.productId}...`);
+      
+      const { data, error } = await supabase!
+        .from('products')
+        .update({ status: 'REJECTED' })
+        .eq('product_id', confirmModal.productId)
+        .select();
+
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
+
+      console.log(`❌ Product ${confirmModal.productId} rejected successfully`, data);
+      
+      // Wait a moment then refresh data to ensure database is updated
+      setTimeout(async () => {
+        await loadAllData();
+      }, 500);
+      
+      setSelectedProductId(null);
+      setConfirmModal({ isOpen: false, type: 'approve', productId: null, productName: '' });
+    } catch (error) {
+      console.error('❌ Error rejecting product:', error);
+      alert('❌ Failed to reject product. Please try again.');
+    } finally {
+      setRejectingId(null);
+    }
+  }, [confirmModal.productId, loadAllData]);
+
+  const handleCloseModal = useCallback(() => {
+    setConfirmModal({ isOpen: false, type: 'approve', productId: null, productName: '' });
+  }, []);
+
+  const handleCopyTransactionId = (txId: string) => {
+    navigator.clipboard.writeText(txId);
+    setCopiedId(txId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const getEtherscanLink = (txHash: string | null | undefined): string | null => {
+    if (!txHash) return null;
+    return `https://sepolia.etherscan.io/tx/${txHash}`;
+  };
+
+  const handlePromoteUser = (userId: number, username: string) => {
+    setUserActionModal({
+      isOpen: true,
+      type: 'promote',
+      userId,
+      username
+    });
+  };
+
+  const handleDeleteUser = (userId: number, username: string) => {
+    setUserActionModal({
+      isOpen: true,
+      type: 'delete',
+      userId,
+      username
+    });
+  };
+
+  const confirmUserAction = async () => {
+    if (!userActionModal.userId || !profile?.user_id) return;
+
+    setPerformingAction(userActionModal.userId);
+    try {
+      const profileUserId = parseInt(profile.user_id, 10);
+      const result = userActionModal.type === 'promote'
+        ? await adminService.promoteUserToAdmin(profileUserId, userActionModal.userId)
+        : await adminService.deleteUser(profileUserId, userActionModal.userId);
+
+      if (result.success) {
+        console.log(`✅ ${result.message}`);
+        // Refresh data
+        setTimeout(async () => {
+          await loadAllData();
+        }, 500);
+        setUserActionModal({ isOpen: false, type: 'promote', userId: null, username: '' });
+      } else {
+        alert(`❌ ${result.error}`);
+      }
+    } catch (error) {
+      console.error('❌ Error performing user action:', error);
+      alert('❌ Failed to perform action. Please try again.');
+    } finally {
+      setPerformingAction(null);
+    }
+  };
+
+  const closeUserActionModal = () => {
+    setUserActionModal({ isOpen: false, type: 'promote', userId: null, username: '' });
+  };
+
+  useEffect(() => {
+    document.title = 'Admin Dashboard - CSU Marketplace';
+    loadAllData();
+
+    // Real-time subscriptions
+    const channels = [
+      supabase?.channel('admin-products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        setRefreshing(true);
+        setTimeout(() => {
+          loadAllData().then(() => setRefreshing(false));
+        }, 500);
+      }).subscribe(),
+
+      supabase?.channel('admin-transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        setRefreshing(true);
+        setTimeout(() => {
+          loadAllData().then(() => setRefreshing(false));
+        }, 500);
+      }).subscribe(),
+
+      supabase?.channel('admin-users').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, () => {
+        setRefreshing(true);
+        setTimeout(() => {
+          loadAllData().then(() => setRefreshing(false));
+        }, 500);
+      }).subscribe()
+    ];
+
+    return () => {
+      channels.forEach((ch) => ch?.unsubscribe());
+    };
+  }, [loadAllData]);
+
+  // Auto-load images for pending products
+  useEffect(() => {
+    console.log(`\n📋 PENDING PRODUCTS LOADED: ${pendingProducts.length} products`);
+    
+    if (pendingProducts.length > 0) {
+      console.log(`🚀 Auto-loading images for all pending products...`);
+      pendingProducts.forEach((product) => {
+        console.log(`  - Loading images for product ${product.product_id}: ${product.product_name}`);
+        fetchProductImages(product.product_id).then((urls) => {
+          console.log(`  ✅ Product ${product.product_id} got ${urls.length} images`);
+        });
+      });
+    }
+  }, [pendingProducts, fetchProductImages]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex flex-col">
+      <div className="flex-1">
+        {/* Header */}
+        <div className="sticky top-0 z-10 shadow-lg" style={{ backgroundColor: ADMIN_GREEN }}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-2">
+                  Welcome back, {profile?.first_name} <span className="text-3xl inline-block animate-wave">👋</span>
+                </h1>
+                <p className="text-white text-opacity-90 text-sm leading-relaxed">
+                  Monitor platform activity, manage approvals, and keep the marketplace running smoothly.
+                </p>
               </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={async () => {
+                    setRefreshing(true);
+                    setRefreshModalOpen(true);
+                    try {
+                      const result = await adminService.refreshMaterializedViews();
+                      if (result.success) {
+                        console.log('✅ Materialized views refreshed');
+                        // Reload all dashboard data
+                        await loadAllData();
+                        setRefreshModalOpen(false);
+                        // Show success alert
+                      } else {
+                        console.error('❌ Refresh error:', result.error);
+                        setRefreshModalOpen(false);
+                        setTimeout(() => {
+                          alert(`❌ Refresh failed: ${result.error}`);
+                        }, 300);
+                      }
+                    } catch (error) {
+                      console.error('❌ Error refreshing views:', error);
+                      setRefreshModalOpen(false);
+                      setTimeout(() => {
+                        alert('❌ Failed to refresh data');
+                      }, 300);
+                    } finally {
+                      setRefreshing(false);
+                    }
+                  }}
+                  disabled={refreshing}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', color: 'white' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
+                  title="Refresh materialized views"
+                >
+                  <RefreshCw size={20} className={`${refreshing ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={async () => {
+                    setRefreshing(true);
+                    try {
+                      const pdfBlob = await adminService.generateAdminReportPDF(
+                        overview,
+                        transactions,
+                        userActivity,
+                        pendingProducts,
+                        topSellersData,
+                        transactionStatusData
+                      );
 
-              {/* Product Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-600 uppercase mb-2">Product Name</h3>
-                    <p className="text-xl font-bold" style={{ color: '#208756' }}>{selectedProduct.product_name}</p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-600 uppercase mb-2">Category</h3>
-                    <p className="text-base font-semibold px-3 py-1.5 rounded-lg border border-gray-200 inline-block" style={{ backgroundColor: '#f0f8f6', color: '#208756' }}>
-                      {selectedProduct.category?.category_name}
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-600 uppercase mb-2">Price</h3>
-                    <p className="text-2xl font-bold" style={{ color: '#208756' }}>{formatPrice(selectedProduct.price)}</p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-600 uppercase mb-2">Listing Type</h3>
-                    <span className="inline-block px-3 py-1.5 rounded-lg font-semibold text-white"
-                          style={{ backgroundColor: '#208756' }}>
-                      {selectedProduct.listing_type.replace('_', ' ').toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="rounded-xl p-4 border border-gray-200" style={{ backgroundColor: '#f0f8f6' }}>
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Seller Information</h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between bg-white px-3 py-2 rounded-lg">
-                        <span className="text-gray-600 text-sm">Username:</span>
-                        <span className="font-semibold text-gray-900 text-sm">{selectedProduct.seller?.username}</span>
-                      </div>
-                      <div className="flex justify-between bg-white px-3 py-2 rounded-lg">
-                        <span className="text-gray-600 text-sm">Department:</span>
-                        <span className="font-semibold text-gray-900 text-sm">{selectedProduct.seller?.department}</span>
-                      </div>
-                      <div className="flex justify-between bg-white px-3 py-2 rounded-lg">
-                        <span className="text-gray-600 text-sm">Posted:</span>
-                        <span className="font-semibold text-gray-900 text-sm">{new Date(selectedProduct.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-600 uppercase mb-2">Description</h3>
-                    <p className="text-gray-700 text-sm leading-relaxed bg-gray-50 p-4 rounded-lg border border-gray-200">
-                      {selectedProduct.description}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Admin Actions */}
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-base font-semibold text-gray-700 mb-4">Admin Actions</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <button
-                    onClick={() => handleApproveProduct(selectedProduct)}
-                    disabled={actionLoading}
-                    className="bg-[#208756] hover:bg-[#1a6d45] text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        Approve
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => handleRejectProduct(selectedProduct)}
-                    disabled={actionLoading}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                        </svg>
-                        Reject
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => handleDeleteProduct(selectedProduct)}
-                    disabled={actionLoading}
-                    className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {actionLoading ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                        Delete
-                      </>
-                    )}
-                  </button>
-                </div>
+                      if (pdfBlob) {
+                        // Create download link
+                        const url = URL.createObjectURL(pdfBlob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        const timestamp = new Date().toISOString().split('T')[0];
+                        link.download = `csu-marketplace-admin-report-${timestamp}.pdf`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                        console.log('✅ Report downloaded successfully');
+                      } else {
+                        alert('❌ Failed to generate report');
+                      }
+                    } catch (error) {
+                      console.error('❌ Error downloading report:', error);
+                      alert('❌ Failed to download report');
+                    } finally {
+                      setRefreshing(false);
+                    }
+                  }}
+                  disabled={refreshing}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', color: 'white' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
+                  title="Download PDF report"
+                >
+                  <Download size={20} />
+                </button>
               </div>
             </div>
           </div>
         </div>
-      )}
+
+        {/* Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+          {/* Unified Platform & Management Container */}
+          <div className="rounded-3xl overflow-hidden shadow-2xl">
+            {/* Header Section with Gradient */}
+            <div className="relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${ADMIN_GREEN} 0%, #1a6d45 100%)` }}>
+              <div className="absolute inset-0 opacity-10">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-white rounded-full -mr-48 -mt-48"></div>
+                <div className="absolute bottom-0 left-0 w-96 h-96 bg-white rounded-full -ml-48 -mb-48"></div>
+              </div>
+              
+              <div className="relative px-8 py-8">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h2 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+                      Dashboard Center
+                    </h2>
+                    <p className="text-white text-opacity-80 text-sm">Comprehensive platform insights and management tools</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tab Navigation - Redesigned */}
+            <div className="bg-white px-8 py-6 border-b border-gray-100 flex gap-1 overflow-x-auto">
+              {[
+                { id: 'overview' as const, label: 'Platform Metrics', icon: <BarChart3 size={18} /> },
+                { id: 'management' as const, label: 'Management Center', icon: <Activity size={18} /> }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveMainTab(tab.id)}
+                  className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 transition-all whitespace-nowrap ${
+                    activeMainTab === tab.id
+                      ? 'text-white shadow-lg scale-100'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  style={{
+                    backgroundColor: activeMainTab === tab.id ? ADMIN_GREEN : 'transparent',
+                  }}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Platform Metrics Tab - KPI Cards */}
+            {activeMainTab === 'overview' && (
+              <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50 p-8">
+
+                {/* Sub-Tab Navigation - Redesigned */}
+                <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
+                  {(['users', 'products', 'transactions', 'revenue'] as const).map((tab) => {
+                    const icons = {
+                      users: <Users size={18} />,
+                      products: <Package size={18} />,
+                      transactions: <Activity size={18} />,
+                      revenue: <TrendingUp size={18} />
+                    };
+                    const labels = {
+                      users: 'Users',
+                      products: 'Products',
+                      transactions: 'Transactions',
+                      revenue: 'Revenue'
+                    };
+                    
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => {
+                          const tabElement = document.querySelector(`[data-kpi-tab="${tab}"]`) as HTMLElement;
+                          document.querySelectorAll('[data-kpi-tab]').forEach(el => {
+                            const htmlEl = el as HTMLElement;
+                            htmlEl.style.display = 'none';
+                          });
+                          if (tabElement) tabElement.style.display = 'grid';
+                          setActiveKpiTab(tab);
+                        }}
+                        className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 whitespace-nowrap transition-all ${
+                          activeKpiTab === tab
+                            ? 'text-white shadow-lg'
+                            : 'text-gray-600 hover:text-gray-900 bg-white hover:shadow-md'
+                        }`}
+                        style={{
+                          backgroundColor: activeKpiTab === tab ? ADMIN_GREEN : undefined,
+                        }}
+                      >
+                        {icons[tab]}
+                        {labels[tab]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* KPI Cards Grid - Enhanced */}
+                {(['users', 'products', 'transactions', 'revenue'] as const).map((tab) => (
+                  <div 
+                    key={tab}
+                    data-kpi-tab={tab}
+                    style={{ display: tab === 'users' ? 'grid' : 'none' }}
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+                  >
+                    {tab === 'users' && (
+                      <>
+                        <KpiCard icon={<Users size={20} />} label="Active Users" value={overview?.total_active_users || 0} subtext={`${overview?.new_users_30d || 0} new (30d)`} />
+                        <KpiCard icon={<Star size={20} />} label="Total Reviews" value={overview?.total_reviews || 0} subtext={`Avg rating ${overview?.platform_avg_rating?.toFixed(1) || '0.0'} ⭐`} />
+                        <KpiCard icon={<Package size={20} />} label="Products Sold" value={productsSold} subtext="By all sellers" />
+                        <KpiCard icon={<Activity size={20} />} label="30-Day Active" value={overview?.new_users_30d || 0} subtext="New registrations" />
+                      </>
+                    )}
+                    {tab === 'products' && (
+                      <>
+                        <KpiCard icon={<Package size={20} />} label="Total Products" value={overview?.total_products || 0} subtext={`${overview?.new_products_7d || 0} new (7d)`} trend={5} />
+                        <KpiCard icon={<CheckCircle size={20} />} label="Approved" value={overview?.approved_products || 0} subtext={`${overview?.active_listings || 0} active`} />
+                        <KpiCard icon={<AlertCircle size={20} />} label="Pending Approval" value={overview?.pending_products || 0} subtext="Awaiting review" />
+                        <KpiCard icon={<Eye size={20} />} label="Total Favorites" value={overview?.total_favorites || 0} subtext="Bookmarked products" />
+                      </>
+                    )}
+                    {tab === 'transactions' && (
+                      <>
+                        <KpiCard icon={<Activity size={20} />} label="Total Transactions" value={overview?.total_transactions || 0} subtext={`${overview?.transactions_24h || 0} last 24h`} />
+                        <KpiCard icon={<CheckCircle size={20} />} label="Completed" value={overview?.completed_transactions || 0} subtext={`${overview?.pending_transactions || 0} pending`} />
+                        <KpiCard icon={<Zap size={20} />} label="Total Pending" value={totalPendingTransactions} subtext="Awaiting acceptance" />
+                        <KpiCard icon={<CheckCircle size={20} />} label="Total Accepted" value={totalAcceptedTransactions} subtext="Confirmed orders" />
+                      </>
+                    )}
+                    {tab === 'revenue' && (
+                      <>
+                        <KpiCard icon={<TrendingUp size={20} />} label="7-Day Revenue" value={overview ? `₱${overview.revenue_7d.toLocaleString('en-PH', { maximumFractionDigits: 0 })}` : '—'} subtext="Last 7 days" />
+                        <KpiCard icon={<TrendingUp size={20} />} label="30-Day Revenue" value={overview ? `₱${overview.revenue_30d.toLocaleString('en-PH', { maximumFractionDigits: 0 })}` : '—'} subtext="Last 30 days" />
+                        <KpiCard icon={<AlertCircle size={20} />} label="Blockchain Pending" value={blockchainPending} subtext="Awaiting confirmation" />
+                        <KpiCard icon={<CheckCircle size={20} />} label="Blockchain Confirmed" value={blockchainConfirmed} subtext="Confirmed records" />
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Management Center Tab - Data Tables */}
+            {activeMainTab === 'management' && (
+              <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50 p-8">
+                <div className="mb-8">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Management Center</h3>
+                  <p className="text-gray-600 text-sm">Monitor and manage platform operations efficiently</p>
+                </div>
+
+                {/* Data Sub-Tab Navigation - Redesigned */}
+                <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
+                  {[
+                    { id: 'products' as const, label: 'Pending Approvals', icon: <AlertCircle size={18} /> },
+                    { id: 'transactions' as const, label: 'Recent Transactions', icon: <Activity size={18} /> },
+                    { id: 'activity' as const, label: 'User Management', icon: <Users size={18} /> }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveDataTab(tab.id)}
+                      className={`px-6 py-3 rounded-xl font-semibold flex items-center gap-2 whitespace-nowrap transition-all ${
+                        activeDataTab === tab.id
+                          ? 'text-white shadow-lg'
+                          : 'text-gray-600 hover:text-gray-900 bg-white hover:shadow-md'
+                      }`}
+                      style={{
+                        backgroundColor: activeDataTab === tab.id ? ADMIN_GREEN : undefined,
+                      }}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dynamic Data Table Content */}
+                {activeDataTab === 'products' && (
+                  <div>
+                    <div className="mb-6 flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                        <div className="bg-yellow-100 p-2 rounded-lg">
+                          <AlertCircle size={20} className="text-yellow-600" />
+                        </div>
+                        Pending Product Approvals ({pendingProducts.length})
+                      </h3>
+                    </div>
+
+                    {loading ? (
+                      <div className="text-center py-12 text-gray-500">Loading products...</div>
+                    ) : pendingProducts.length === 0 ? (
+                      <div className="text-center py-12 text-gray-500">No pending products</div>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {pendingProducts.map((product) => {
+                          const productImageData = productImages[product.product_id] as any;
+                          const isExpanded = selectedProductId === product.product_id;
+                          
+                          return (
+                          <div 
+                            key={product.product_id} 
+                            className="group bg-white rounded-2xl overflow-hidden hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 hover:border-gray-200"
+                          >
+                            {/* Product Image */}
+                            <div 
+                              className="relative w-full cursor-pointer group"
+                              style={{ paddingBottom: '100%' }}
+                              onClick={() => {
+                                setSelectedProductId(isExpanded ? null : product.product_id);
+                                if (!productImageData) {
+                                  fetchProductImages(product.product_id);
+                                }
+                              }}
+                            >
+                              <div className="absolute inset-0">
+                                {productImageData ? (
+                                  <ImageCarousel
+                                    images={productImageData}
+                                    productName={product.product_name}
+                                    className="h-full w-full"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center">
+                                    <Package size={40} className="text-gray-400 mb-2" />
+                                    <p className="text-xs text-gray-500">Loading...</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Pending Badge - Top Left */}
+                              <div className="absolute top-2 left-2 bg-yellow-400 px-3 py-1.5 rounded-full text-xs font-bold text-gray-900 shadow-md">
+                                {Math.round(product.hours_pending)}h pending
+                              </div>
+
+                              {/* Image Counter - Top Right */}
+                              {productImageData && productImageData.length > 1 && (
+                                <div className="absolute top-2 right-2 backdrop-blur-md bg-black bg-opacity-50 px-2.5 py-1 rounded-full flex items-center space-x-1">
+                                  <span className="text-xs font-bold text-white">+{productImageData.length - 1}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Product Info */}
+                            <div className="p-3">
+                              {/* Product Name */}
+                              <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1" style={{ minHeight: '40px' }}>
+                                {product.product_name}
+                              </h3>
+
+                              {/* Product Description */}
+                              <p className="text-xs text-gray-500 line-clamp-1 mb-2">
+                                {product.description}
+                              </p>
+
+                              {/* Price & Listing Type Badge */}
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-lg font-bold" style={{ color: ADMIN_GREEN }}>
+                                  ₱{product.price.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                                </p>
+                                <div className={`px-2.5 py-1 rounded-full text-xs font-semibold text-white ${
+                                  product.listing_type === 'FOR_SALE' 
+                                    ? 'bg-[#208756]' 
+                                    : product.listing_type === 'FOR_RENT'
+                                    ? 'bg-blue-600'
+                                    : 'bg-purple-600'
+                                }`}>
+                                  {product.listing_type === 'FOR_SALE' ? 'For Sale' : product.listing_type === 'FOR_RENT' ? 'For Rent' : 'Service'}
+                                </div>
+                              </div>
+
+                              {/* Category & Stock */}
+                              <div className="mb-3 pb-3 border-b border-gray-100 grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <p className="text-gray-500 font-medium">Category</p>
+                                  <p className="text-gray-700 font-semibold">{product.category_name}</p>
+                                </div>
+                                <div>
+                                  <p className="text-gray-500 font-medium">Stock</p>
+                                  <p className="text-gray-700 font-semibold">{product.quantity} units</p>
+                                </div>
+                              </div>
+
+                              {/* Seller Info */}
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="flex-shrink-0">
+                                  {product.seller_profile_picture && !product.seller_profile_picture.includes('null') ? (
+                                    <img
+                                      src={product.seller_profile_picture.startsWith('http') 
+                                        ? product.seller_profile_picture 
+                                        : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/profile-pictures/${product.seller_profile_picture}`
+                                      }
+                                      alt={product.seller_name}
+                                      className="w-8 h-8 rounded-full object-cover border-2 border-[#208756]"
+                                    />
+                                  ) : (
+                                    <div className="w-8 h-8 bg-gradient-to-br from-[#208756] to-[#1a6d45] rounded-full flex items-center justify-center">
+                                      <Users className="w-4 h-4 text-white" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-gray-900 truncate">
+                                    {product.seller_name}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {product.seller_email}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Seller Rating */}
+                              <div className="flex items-center space-x-1 mb-3 pb-3 border-b border-gray-100">
+                                <svg className="w-3 h-3 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                                  <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                                </svg>
+                                <span className="text-xs font-medium text-gray-700">
+                                  {product.seller_rating && product.seller_rating > 0 
+                                    ? product.seller_rating.toFixed(1) 
+                                    : 'New Seller'}
+                                </span>
+                              </div>
+
+                              {/* Expanded Details */}
+                              {isExpanded && (
+                                <div className="mb-4 pb-4 border-t border-gray-100 pt-3 text-xs space-y-2">
+                                  <div>
+                                    <p className="font-semibold text-gray-700 mb-1">Full Description</p>
+                                    <p className="text-gray-600 text-xs leading-relaxed">{product.description}</p>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-gray-700 mb-1">Images</p>
+                                    <p className="text-gray-600">{product.image_count} images uploaded</p>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-gray-700 mb-1">Submitted</p>
+                                    <p className="text-gray-600">
+                                      {new Date(product.created_at).toLocaleDateString('en-PH', { 
+                                        year: 'numeric', 
+                                        month: 'short', 
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Action Buttons */}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleApproveProduct(product.product_id)}
+                                  disabled={approvingId === product.product_id || rejectingId === product.product_id}
+                                  className="flex-1 px-3 py-2 hover:opacity-90 disabled:bg-gray-300 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                                  style={{ backgroundColor: ADMIN_GREEN }}
+                                >
+                                  <ThumbsUp size={14} />
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleRejectProduct(product.product_id)}
+                                  disabled={approvingId === product.product_id || rejectingId === product.product_id}
+                                  className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                                >
+                                  <ThumbsDown size={14} />
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeDataTab === 'transactions' && (
+                  <DataTable
+                    title="Recent Transactions"
+                    icon={<Activity size={20} style={{ color: ADMIN_GREEN }} />}
+                    data={transactions}
+                    loading={loading}
+                    columns={[
+                      {
+                        key: 'transaction_id',
+                        label: 'Transaction ID',
+                        render: (row) => (
+                          <div className="flex items-center gap-2">
+                            <code className="text-xs bg-gray-100 px-2 py-1 rounded">{row.transaction_id.slice(0, 8)}...</code>
+                            <button
+                              onClick={() => handleCopyTransactionId(row.transaction_id)}
+                              className="p-1 hover:bg-gray-100 rounded transition-colors"
+                              title="Copy transaction ID"
+                            >
+                              {copiedId === row.transaction_id ? (
+                                <Check size={14} className="text-green-600" />
+                              ) : (
+                                <Copy size={14} className="text-gray-600 hover:text-gray-900" />
+                              )}
+                            </button>
+                            {row.blockchain_tx_hash && (
+                              <a
+                                href={getEtherscanLink(row.blockchain_tx_hash) || '#'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                                title="View on Etherscan (Sepolia)"
+                              >
+                                <ExternalLink size={14} className="text-blue-600 hover:text-blue-900" />
+                              </a>
+                            )}
+                          </div>
+                        )
+                      },
+                      { key: 'buyer_username', label: 'Buyer' },
+                      { key: 'seller_username', label: 'Seller' },
+                      { key: 'item_name', label: 'Item' },
+                      {
+                        key: 'total_amount',
+                        label: 'Amount',
+                        render: (row) => `₱${row.total_amount.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`
+                      },
+                      {
+                        key: 'transaction_status',
+                        label: 'Status',
+                        render: (row) => (
+                          <span
+                            className="px-2 py-1 rounded-full text-xs font-semibold text-white"
+                            style={{ backgroundColor: row.status_color }}
+                          >
+                            {row.transaction_status}
+                          </span>
+                        )
+                      }
+                    ]}
+                  />
+                )}
+
+                {activeDataTab === 'activity' && (
+                  <DataTable
+                    title="User Management"
+                    icon={<Users size={20} style={{ color: ADMIN_GREEN }} />}
+                    data={userActivity}
+                    loading={loading}
+                    columns={[
+                      { key: 'id_number', label: 'ID Number' },
+                      { key: 'full_name', label: 'Name' },
+                      { key: 'phone_number', label: 'Phone Number' },
+                      { key: 'department', label: 'Department' },
+                      {
+                        key: 'member_since',
+                        label: 'Member Since',
+                        render: (row) => new Date(row.member_since).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+                      },
+                      {
+                        key: 'activity_status',
+                        label: 'Status',
+                        render: (row) => (
+                          <span
+                            className="px-2 py-1 rounded-full text-xs font-semibold text-white"
+                            style={{
+                              backgroundColor:
+                                row.activity_status === 'Active' ? '#10b981' :
+                                row.activity_status === 'Moderate' ? '#f59e0b' :
+                                '#6b7280'
+                            }}
+                          >
+                            {row.activity_status}
+                          </span>
+                        )
+                      },
+                      {
+                        key: 'actions',
+                        label: 'Actions',
+                        render: (row) => (
+                          <div className="flex items-center gap-2">
+                            {!row.is_admin && (
+                              <button
+                                onClick={() => handlePromoteUser(row.user_id, row.username)}
+                                disabled={performingAction === row.user_id}
+                                className="p-1.5 bg-blue-100 hover:bg-blue-200 disabled:bg-gray-100 text-blue-700 rounded transition-colors"
+                                title="Promote to Admin"
+                              >
+                                <Edit size={14} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteUser(row.user_id, row.username)}
+                              disabled={performingAction === row.user_id}
+                              className="p-1.5 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 text-red-700 rounded transition-colors"
+                              title="Delete User"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )
+                      }
+                    ]}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Charts Section */}
+          {!loading && (
+            <ChartsSection
+              revenueData={revenueData}
+              userGrowthData={userGrowthData}
+              topSellersData={topSellersData}
+              transactionStatusData={transactionStatusData}
+              productTrendData={productTrendData}
+              dailyMetrics={dailyMetrics}
+              categoryPareto={categoryPareto}
+            />
+          )}
+        </div>
+      </div>
+
+      <Footer />
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        type={confirmModal.type}
+        title={confirmModal.type === 'approve' ? 'Approve Product?' : 'Reject Product?'}
+        message={
+          confirmModal.type === 'approve'
+            ? `Are you sure you want to approve "${confirmModal.productName}"? This will make the product visible to all users on the marketplace.`
+            : `Are you sure you want to reject "${confirmModal.productName}"? The seller will be notified and the product will not be listed.`
+        }
+        confirmText={confirmModal.type === 'approve' ? 'Approve' : 'Reject'}
+        cancelText="Cancel"
+        isLoading={approvingId === confirmModal.productId || rejectingId === confirmModal.productId}
+        onConfirm={confirmModal.type === 'approve' ? confirmApproveProduct : confirmRejectProduct}
+        onCancel={handleCloseModal}
+      />
+
+      {/* User Action Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={userActionModal.isOpen}
+        type={userActionModal.type === 'promote' ? 'approve' : 'reject'}
+        title={userActionModal.type === 'promote' ? 'Promote to Admin?' : 'Delete User?'}
+        message={
+          userActionModal.type === 'promote'
+            ? `Are you sure you want to promote "${userActionModal.username}" to admin? They will have access to the admin dashboard and all management features.`
+            : `Are you sure you want to delete "${userActionModal.username}"? This action is permanent and will delete all their data including products and orders.`
+        }
+        confirmText={userActionModal.type === 'promote' ? 'Promote' : 'Delete'}
+        cancelText="Cancel"
+        isLoading={performingAction === userActionModal.userId}
+        onConfirm={confirmUserAction}
+        onCancel={closeUserActionModal}
+      />
+
+      {/* Refresh Loading Modal */}
+      <LoadingModal isOpen={refreshModalOpen} message="Syncing materialized views with latest data..." />
     </div>
   );
 };

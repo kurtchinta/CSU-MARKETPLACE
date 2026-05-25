@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Wallet, Coins, ShoppingCart, CheckCircle } from 'lucide-react';
+import Footer from '../components/Footer';
 
 interface AccordionItemProps {
   title: string;
@@ -403,6 +404,7 @@ const HelpPage = () => {
           </div>
         </section>
       </div>
+      <Footer />
     </div>
   );
 };

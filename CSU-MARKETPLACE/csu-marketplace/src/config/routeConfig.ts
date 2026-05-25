@@ -16,6 +16,7 @@ import CheckoutPage from '../pages/CheckoutPage';
 import MyOrdersPage from '../pages/MyOrdersPage';
 import SellerOrdersPage from '../pages/SellerOrdersPage';
 import ProfilePage from '../pages/ProfilePage';
+import SellerProfilePage from '../pages/SellerProfilePage';
 import DashboardPage from '../pages/DashboardPage';
 import TransactionHistoryPage from '../pages/TransactionHistoryPage';
 import HelpPage from '../pages/HelpPage';
@@ -120,6 +121,14 @@ export const SHARED_AUTHENTICATED_ROUTES: RouteConfig[] = [
     label: 'Profile',
     description: 'Manage your profile settings',
     icon: '👤'
+  },
+  {
+    path: '/seller/:sellerId',
+    component: SellerProfilePage,
+    accessLevel: 'authenticated',
+    label: 'Seller Profile',
+    description: 'View seller profile and reviews',
+    icon: '👥'
   },
   {
     path: '/cart',

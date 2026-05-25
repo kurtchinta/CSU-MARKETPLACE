@@ -1,119 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import dashboardService from '../services/dashboardService';
+import type {
+  DashboardOverview,
+  MonthlyRevenue,
+  CategoryPerformance,
+  TopProduct,
+  SalesTrend,
+  RecentActivity,
+  OrderStatusDistribution
+} from '../services/dashboardService';
 import { 
-  Package, ShoppingCart, TrendingUp, Star, Activity, AlertCircle, 
-  DollarSign, ArrowUp, Users,
-  MapPin, FileText, Clock, Award, BarChart3, PieChart
+  Package, ShoppingCart, Star, AlertCircle, 
+  Loader, Clock, Eye, TrendingUp, BarChart3, PieChart as PieChartIcon, Activity, Heart
 } from 'lucide-react';
+import {
+  BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area
+} from 'recharts';
+import Footer from '../components/Footer';
 
-// CSU Green Theme Colors
 const CSU_GREEN = '#208756';
-const CSU_GREEN_LIGHT = '#f0f8f5';
-
-// Chart Colors (matching reference design)
-const CHART_COLORS = ['#208756', '#FFCF50', '#4285F4', '#FF7F1C', '#34A853', '#EA4335', '#9C27B0', '#00BCD4'];
-
-// Database View Interfaces
-interface DashboardOverview {
-  user_id: string;
-  username: string;
-  total_products_posted: number;
-  total_products_sold: number;
-  total_orders_as_buyer: number;
-  total_orders_as_seller: number;
-  total_revenue: number;
-  average_seller_rating: number;
-  total_reviews_received: number;
-  active_listings: number;
-  pending_listings: number;
-  pending_orders_as_seller: number;
-  pending_orders_as_buyer: number;
-  sales_30d: number;
-  revenue_30d: number;
-  total_product_favorites: number;
-  items_in_cart: number;
-}
-
-interface MonthlyRevenue {
-  user_id: string;
-  month: string;
-  month_label: string;
-  transaction_count: number;
-  monthly_revenue: number;
-  avg_transaction_value: number;
-}
-
-interface CategoryRevenue {
-  user_id: string;
-  category_name: string;
-  product_count: number;
-  category_revenue: number;
-  sales_count: number;
-}
-
-interface RecentActivity {
-  activity_id: number;
-  user_id: string;
-  activity_type: string;
-  description: string;
-  timestamp: string;
-  related_id: number;
-}
-
-interface SalesPerformance {
-  user_id: string;
-  sale_date: string;
-  week_start: string;
-  month_start: string;
-  daily_sales_count: number;
-  daily_revenue: number;
-  weekly_sales_count: number;
-  weekly_revenue: number;
-  monthly_sales_count: number;
-  monthly_revenue: number;
-}
-
-interface TopProduct {
-  user_id: string;
-  product_id: number;
-  product_name: string;
-  price: number;
-  view_count: number;
-  category_name: string;
-  sales_count: number;
-  total_revenue: number;
-  favorite_count: number;
-  avg_rating: number;
-  review_count: number;
-  image_url: string;
-}
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
 
+  // State for all dashboard data
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
+  const [categoryPerformance, setCategoryPerformance] = useState<CategoryPerformance[]>([]);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [salesTrend, setSalesTrend] = useState<SalesTrend[]>([]);
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [orderStatusDistribution, setOrderStatusDistribution] = useState<OrderStatusDistribution[]>([]);
+  const [realTotalRevenue, setRealTotalRevenue] = useState<number>(0);
+  const [realGlobalProductsSold, setRealGlobalProductsSold] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     document.title = 'Dashboard - CSU Marketplace';
   }, []);
 
-  const [overview, setOverview] = useState<DashboardOverview | null>(null);
-  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenue[]>([]);
-  const [categoryRevenue, setCategoryRevenue] = useState<CategoryRevenue[]>([]);
-  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
-  const [salesPerformance, setSalesPerformance] = useState<SalesPerformance[]>([]);
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [revenuePeriod, setRevenuePeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-
   // Block admins
-  const isAdmin = profile?.role_id === 1 || profile?.is_admin === true;
-  if (isAdmin) {
-    navigate('/admin', { replace: true });
-    return null;
-  }
+  useEffect(() => {
+    const isAdmin = profile?.role_id === 1 || profile?.is_admin === true;
+    if (isAdmin) {
+      navigate('/admin', { replace: true });
+    }
+  }, [profile, navigate]);
 
+  // Load all dashboard data
   useEffect(() => {
     if (user?.id) {
       loadDashboardData();
@@ -121,37 +60,40 @@ const DashboardPage: React.FC = () => {
   }, [user?.id]);
 
   const loadDashboardData = async () => {
-    if (!user?.id || !supabase) return;
+    if (!user?.id) return;
 
     try {
       setLoading(true);
-      console.log('📊 Loading comprehensive dashboard data for user:', user.id);
+      console.log('📊 Loading dashboard data for user:', user.id);
 
-      // Load all views in parallel
-      const [
-        overviewData,
-        monthlyData,
-        categoryData,
-        activityData,
-        performanceData,
-        topProductsData
-      ] = await Promise.all([
-        supabase.from('user_view_dashboard_overview').select('*').eq('user_id', user.id).single(),
-        supabase.from('user_view_monthly_revenue').select('*').eq('user_id', user.id).order('month', { ascending: true }),
-        supabase.from('user_view_category_revenue').select('*').eq('user_id', user.id).order('category_revenue', { ascending: false }).limit(6),
-        supabase.from('user_view_recent_activity').select('*').eq('user_id', user.id).limit(10),
-        supabase.from('user_view_sales_performance').select('*').eq('user_id', user.id).order('sale_date', { ascending: false }).limit(90),
-        supabase.from('user_view_top_products').select('*').eq('user_id', user.id).limit(4)
-      ]);
+      const data = await dashboardService.loadAllDashboardData(
+        user.id,
+        user.id
+      );
 
-      if (overviewData.data) setOverview(overviewData.data);
-      if (monthlyData.data) setMonthlyRevenue(monthlyData.data);
-      if (categoryData.data) setCategoryRevenue(categoryData.data);
-      if (activityData.data) setRecentActivity(activityData.data);
-      if (performanceData.data) setSalesPerformance(performanceData.data);
-      if (topProductsData.data) setTopProducts(topProductsData.data);
+      console.log('✅ Dashboard data received:', {
+        overview: data.overview,
+        monthlyRevenue: data.monthlyRevenue?.length,
+        salesTrend: data.salesTrend?.length,
+        categoryPerformance: data.categoryPerformance?.length,
+        topProducts: data.topProducts?.length,
+        recentActivity: data.recentActivity?.length,
+        orderStatusDistribution: data.orderStatusDistribution?.length,
+        realTotalRevenue: data.realTotalRevenue,
+        realGlobalProductsSold: data.realGlobalProductsSold
+      });
 
-      console.log('✅ Dashboard data loaded successfully');
+      setOverview(data.overview);
+      setMonthlyRevenue(data.monthlyRevenue || []);
+      setSalesTrend(data.salesTrend || []);
+      setCategoryPerformance(data.categoryPerformance || []);
+      setTopProducts(data.topProducts || []);
+      setRecentActivity(data.recentActivity || []);
+      setOrderStatusDistribution(data.orderStatusDistribution || []);
+      setRealTotalRevenue(data.realTotalRevenue || 0);
+      setRealGlobalProductsSold(data.realGlobalProductsSold || 0);
+
+      console.log('✅ All dashboard data loaded successfully');
     } catch (error) {
       console.error('❌ Error loading dashboard:', error);
     } finally {
@@ -159,8 +101,9 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number) => `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  
+  const formatCurrency = (amount: number) => 
+    `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -176,721 +119,682 @@ const DashboardPage: React.FC = () => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const getRevenueData = () => {
-    if (revenuePeriod === 'daily') {
-      return salesPerformance.slice(0, 7).reverse().map(p => ({
-        label: new Date(p.sale_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: p.daily_revenue,
-        count: p.daily_sales_count
-      }));
-    } else if (revenuePeriod === 'weekly') {
-      const weeklyMap = new Map<string, { revenue: number; count: number }>();
-      salesPerformance.slice(0, 56).forEach(p => {
-        const key = p.week_start;
-        const existing = weeklyMap.get(key) || { revenue: 0, count: 0 };
-        weeklyMap.set(key, {
-          revenue: existing.revenue + p.daily_revenue,
-          count: existing.count + p.daily_sales_count
-        });
-      });
-      return Array.from(weeklyMap.entries())
-        .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-        .slice(-8)
-        .map(([week, data]) => ({
-          label: `W${new Date(week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-          value: data.revenue,
-          count: data.count
-        }));
-    } else {
-      return monthlyRevenue.map(m => ({
-        label: m.month_label.substring(0, 3),
-        value: m.monthly_revenue,
-        count: m.transaction_count
-      }));
+  // Ensure all 5 order statuses are shown (with 0 count if not present)
+  const ensureAllOrderStatuses = (data: OrderStatusDistribution[]): OrderStatusDistribution[] => {
+    if (data.length === 0) {
+      return [
+        { seller_id: user?.id || '', order_status: 'pending', count: 0, percentage: 0, total_value: 0 },
+        { seller_id: user?.id || '', order_status: 'accepted', count: 0, percentage: 0, total_value: 0 },
+        { seller_id: user?.id || '', order_status: 'completed', count: 0, percentage: 0, total_value: 0 },
+        { seller_id: user?.id || '', order_status: 'rejected', count: 0, percentage: 0, total_value: 0 },
+        { seller_id: user?.id || '', order_status: 'cancelled', count: 0, percentage: 0, total_value: 0 }
+      ];
     }
+    
+    const statusMap = new Map(data.map(item => [item.order_status.toLowerCase(), item]));
+    const allStatuses = ['pending', 'accepted', 'completed', 'rejected', 'cancelled'];
+    
+    return allStatuses.map(status => {
+      if (statusMap.has(status)) {
+        return statusMap.get(status)!;
+      }
+      // Return placeholder with 0 count for missing statuses
+      return {
+        seller_id: data[0]?.seller_id || '',
+        order_status: status,
+        count: 0,
+        percentage: 0,
+        total_value: 0
+      };
+    });
   };
 
-  const revenueData = getRevenueData();
-  const maxRevenue = Math.max(...revenueData.map(d => d.value), 1);
-  const totalCategoryRevenue = categoryRevenue.reduce((sum, c) => sum + c.category_revenue, 0);
+  const COLORS = [
+    CSU_GREEN,      // Primary green
+    '#0ea5e9',      // Sky blue
+    '#f59e0b',      // Amber
+    '#ef4444',      // Red
+    '#8b5cf6',      // Purple
+    '#ec4899',      // Pink
+    '#14b8a6',      // Teal
+    '#6366f1'       // Indigo
+  ];
+
+  // Format month data for charts
+  const monthlyRevenueChartData = monthlyRevenue.map(item => ({
+    name: new Date(item.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+    revenue: Math.round(item.monthly_revenue),
+    transactions: item.transaction_count
+  }));
+
+  // Format sales trend data
+  const salesTrendChartData = salesTrend.map(item => ({
+    name: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    sales: item.daily_sales,
+    forSale: item.for_sale,
+    forRent: item.for_rent,
+    services: item.services
+  }));
+
+  // Format category performance data
+  const categoryChartData = categoryPerformance.map(cat => ({
+    name: cat.category_name,
+    revenue: Math.round(cat.total_revenue),
+    transactions: cat.completed_transactions
+  }));
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Activity className="w-16 h-16 mx-auto mb-4 animate-spin" style={{ color: CSU_GREEN }} />
-          <p className="text-gray-600 font-medium text-lg">Loading Dashboard...</p>
-        </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center flex-col">
+        <Loader className="w-12 h-12 animate-spin mb-4" style={{ color: CSU_GREEN }} />
+        <p className="text-gray-600">Loading Dashboard...</p>
       </div>
     );
   }
 
   if (!overview) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="w-16 h-16 mx-auto mb-4 text-red-500" />
-          <p className="text-gray-600 font-medium">Failed to load dashboard</p>
-        </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center flex-col">
+        <AlertCircle className="w-16 h-16 mb-4 text-red-500" />
+        <p className="text-gray-600 font-medium">Failed to load dashboard</p>
       </div>
     );
   }
 
+  // Determine if user is new (registered within the last hour)
+  const isNewUser = () => {
+    if (!profile?.created_at) return false;
+    const createdDate = new Date(profile.created_at);
+    const now = new Date();
+    const diffInMinutes = (now.getTime() - createdDate.getTime()) / (1000 * 60);
+    return diffInMinutes < 60;
+  };
+
+  const isNew = isNewUser();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 pb-12">
-      <div className="max-w-[1600px] mx-auto px-6 py-8">
-        {/* Welcome Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Welcome back, {profile?.first_name}! 👋</h1>
-          <p className="text-gray-600 mt-2 text-lg">Here's what's happening with your marketplace today</p>
-        </div>
-
-        {/* KPI Cards Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Total Sales Card */}
-          <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all border border-pink-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-pink-500 shadow-lg">
-                <DollarSign className="w-7 h-7 text-white" />
-              </div>
-              <button className="px-3 py-1 bg-white rounded-lg text-xs font-semibold text-pink-600 shadow-sm">Export</button>
-            </div>
-            <h3 className="text-sm font-medium text-gray-600 mb-1">Total Sales</h3>
-            <p className="text-3xl font-bold text-gray-900">{formatCurrency(overview.total_revenue)}</p>
-            <p className="text-xs text-pink-600 mt-2 flex items-center gap-1">
-              <ArrowUp className="w-3 h-3" />
-              +{overview.sales_30d} from last month
-            </p>
-          </div>
-
-          {/* Total Orders Card */}
-          <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all border border-amber-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-amber-500 shadow-lg">
-                <ShoppingCart className="w-7 h-7 text-white" />
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="flex-1">
+        {/* Welcome Section - Stuck to Navbar */}
+        <div className="w-full" style={{ backgroundColor: CSU_GREEN }}>
+          <div className="max-w-7xl mx-auto px-4 py-5">
+            <div className="relative">
+              {/* Content */}
+              <div className="relative z-10">
+                {isNew ? (
+                  <>
+                    <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                      Welcome to your Dashboard <span className="text-2xl inline-block animate-wave">👋</span>
+                    </h1>
+                    <p className="text-green-100 text-sm leading-relaxed">
+                      Everything is set up and ready to go. Start exploring, create listings, and grow your marketplace presence.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+                      Welcome back, {profile?.first_name} <span className="text-2xl inline-block animate-wave">👋</span>
+                    </h1>
+                    <p className="text-green-100 text-sm leading-relaxed">
+                      Great to see you again! Check your performance, manage your listings, and keep growing.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
-            <h3 className="text-sm font-medium text-gray-600 mb-1">Total Orders</h3>
-            <p className="text-3xl font-bold text-gray-900">{overview.total_orders_as_buyer}</p>
-            <p className="text-xs text-amber-600 mt-2">+6% from yesterday</p>
-          </div>
-
-          {/* Products Sold Card */}
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all border border-green-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg" style={{ backgroundColor: CSU_GREEN }}>
-                <Package className="w-7 h-7 text-white" />
-              </div>
-            </div>
-            <h3 className="text-sm font-medium text-gray-600 mb-1">Products Sold</h3>
-            <p className="text-3xl font-bold text-gray-900">{overview.total_products_sold}</p>
-            <p className="text-xs mt-2" style={{ color: CSU_GREEN }}>+12% from yesterday</p>
-          </div>
-
-          {/* New Customers Card */}
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all border border-purple-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-purple-500 shadow-lg">
-                <Users className="w-7 h-7 text-white" />
-              </div>
-            </div>
-            <h3 className="text-sm font-medium text-gray-600 mb-1">Active Listings</h3>
-            <p className="text-3xl font-bold text-gray-900">{overview.active_listings}</p>
-            <p className="text-xs text-purple-600 mt-2">0.5% from yesterday</p>
           </div>
         </div>
 
-        {/* Main Dashboard Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* LEFT: Revenue Chart (2/3 width) */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">Your Sales</h3>
-                <p className="text-sm text-gray-500 mt-1">Sales Summary</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setRevenuePeriod('daily')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    revenuePeriod === 'daily' ? 'text-white shadow-md' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'
-                  }`}
-                  style={revenuePeriod === 'daily' ? { backgroundColor: CSU_GREEN } : {}}
-                >
-                  Day
-                </button>
-                <button
-                  onClick={() => setRevenuePeriod('weekly')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    revenuePeriod === 'weekly' ? 'text-white shadow-md' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'
-                  }`}
-                  style={revenuePeriod === 'weekly' ? { backgroundColor: CSU_GREEN } : {}}
-                >
-                  Week
-                </button>
-                <button
-                  onClick={() => setRevenuePeriod('monthly')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    revenuePeriod === 'monthly' ? 'text-white shadow-md' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'
-                  }`}
-                  style={revenuePeriod === 'monthly' ? { backgroundColor: CSU_GREEN } : {}}
-                >
-                  Month
-                </button>
-              </div>
+        <div className="max-w-7xl mx-auto px-4 py-8">
+
+          {/* KPI Cards - Unified Container */}
+          <div className="bg-gradient-to-br from-white via-white to-green-50 rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-xl transition-all mb-8" style={{ borderTop: `4px solid ${CSU_GREEN}` }}>
+            <div className="mb-6 pb-6 border-b-2" style={{ borderColor: `${CSU_GREEN}20` }}>
+              <h2 className="text-2xl font-bold text-gray-900">Performance Overview</h2>
+              <p className="text-gray-500 text-sm mt-1">Your key metrics at a glance</p>
             </div>
-
-            {/* Revenue Line Chart */}
-            <div className="relative h-72">
-              {revenueData.length > 0 ? (
-                <svg className="w-full h-full" viewBox="0 0 800 300" preserveAspectRatio="none">
-                  {/* Grid Lines */}
-                  {[0, 1, 2, 3, 4].map(i => (
-                    <line key={i} x1="0" y1={60 * i} x2="800" y2={60 * i} stroke="#f0f0f0" strokeWidth="1" />
-                  ))}
-                  
-                  {/* Area Gradient Fill */}
-                  <defs>
-                    <linearGradient id="revenueGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor={CSU_GREEN} stopOpacity="0.3" />
-                      <stop offset="100%" stopColor={CSU_GREEN} stopOpacity="0.05" />
-                    </linearGradient>
-                  </defs>
-
-                  {(() => {
-                    const points = revenueData.map((data, index) => {
-                      const x = revenueData.length > 1 ? (index / (revenueData.length - 1)) * 800 : 400;
-                      const y = 270 - ((data.value / maxRevenue) * 240);
-                      return `${x},${y}`;
-                    }).join(' ');
-                    
-                    return (
-                      <>
-                        <polygon points={`0,300 ${points} 800,300`} fill="url(#revenueGradient)" />
-                        <polyline points={points} fill="none" stroke={CSU_GREEN} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                      </>
-                    );
-                  })()}
-
-                  {/* Data Points */}
-                  {revenueData.map((data, index) => {
-                    const x = revenueData.length > 1 ? (index / (revenueData.length - 1)) * 800 : 400;
-                    const y = 270 - ((data.value / maxRevenue) * 240);
-                    const isMax = data.value === maxRevenue;
-                    
-                    return (
-                      <g key={index}>
-                        <circle cx={x} cy={y} r={isMax ? 7 : 5} fill="white" stroke={CSU_GREEN} strokeWidth="3" />
-                        {isMax && (
-                          <text x={x} y={y - 20} textAnchor="middle" fontSize="14" fill={CSU_GREEN} fontWeight="bold">
-                            {formatCurrency(data.value)}
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-                </svg>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                  <BarChart3 className="w-12 h-12 mb-2" />
-                  <p>No sales data available</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Total Revenue */}
+              <div className="group p-6 rounded-xl bg-gradient-to-br from-white to-green-50 border-2 transition-all hover:shadow-lg hover:scale-105" style={{ borderColor: `${CSU_GREEN}30`, backgroundColor: `${CSU_GREEN}05` }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-lg group-hover:scale-125 transition-transform" style={{ backgroundColor: `${CSU_GREEN}20` }}>
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 1v22m0 0c5.523 0 10-2.239 10-5s-4.477-5-10-5-10 2.239-10 5 4.477 5 10 5zm0 0c5.523 0 10-2.239 10-5V6c0 2.761-4.477 5-10 5s-10-2.239-10-5v12c0 2.761 4.477 5 10 5z" 
+                          stroke={CSU_GREEN} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div className="text-xs font-bold px-3 py-1 rounded-full" style={{ backgroundColor: `${CSU_GREEN}15`, color: CSU_GREEN }}>REVENUE</div>
                 </div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Total Revenue</h3>
+                <p className="text-2xl font-bold text-gray-900 mb-2">{formatCurrency(realTotalRevenue)}</p>
+                <p className="text-xs text-gray-500">From all transactions</p>
+              </div>
+
+              {/* Total Products Sold */}
+              <div className="group p-6 rounded-xl bg-gradient-to-br from-white to-green-50 border-2 transition-all hover:shadow-lg hover:scale-105" style={{ borderColor: `${CSU_GREEN}30`, backgroundColor: `${CSU_GREEN}05` }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-lg group-hover:scale-125 transition-transform" style={{ backgroundColor: `${CSU_GREEN}20` }}>
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                      <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
+                          stroke={CSU_GREEN} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div className="text-xs font-bold px-3 py-1 rounded-full" style={{ backgroundColor: `${CSU_GREEN}15`, color: CSU_GREEN }}>PRODUCTS</div>
+                </div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Products Sold</h3>
+                <p className="text-2xl font-bold text-gray-900 mb-2">{realGlobalProductsSold}</p>
+                <p className="text-xs text-gray-500">Total from all users</p>
+              </div>
+
+              {/* Active Listings */}
+              <div className="group p-6 rounded-xl bg-gradient-to-br from-white to-green-50 border-2 transition-all hover:shadow-lg hover:scale-105" style={{ borderColor: `${CSU_GREEN}30`, backgroundColor: `${CSU_GREEN}05` }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-lg group-hover:scale-125 transition-transform" style={{ backgroundColor: `${CSU_GREEN}20` }}>
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                      <path d="M9 5a2 2 0 100-4 2 2 0 000 4zm0 0h6m-6 0a7 7 0 100 14H3m12 0a7 7 0 100-14m0 14h6" 
+                          stroke={CSU_GREEN} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div className="text-xs font-bold px-3 py-1 rounded-full" style={{ backgroundColor: `${CSU_GREEN}15`, color: CSU_GREEN }}>ACTIVE</div>
+                </div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Active Products</h3>
+                <p className="text-2xl font-bold text-gray-900 mb-2">{overview.active_listings}</p>
+                <p className="text-xs text-gray-500">Pending: <span style={{ color: CSU_GREEN, fontWeight: 'bold' }}>{overview.pending_listings}</span></p>
+              </div>
+
+              {/* Total Orders */}
+              <div className="group p-6 rounded-xl bg-gradient-to-br from-white to-green-50 border-2 transition-all hover:shadow-lg hover:scale-105" style={{ borderColor: `${CSU_GREEN}30`, backgroundColor: `${CSU_GREEN}05` }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-lg group-hover:scale-125 transition-transform" style={{ backgroundColor: `${CSU_GREEN}20` }}>
+                    <Package className="w-6 h-6" style={{ color: CSU_GREEN }} />
+                  </div>
+                  <div className="text-xs font-bold px-3 py-1 rounded-full" style={{ backgroundColor: `${CSU_GREEN}15`, color: CSU_GREEN }}>ORDERS</div>
+                </div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Total Orders</h3>
+                <p className="text-2xl font-bold text-gray-900 mb-2">{overview.total_orders_as_buyer}</p>
+                <p className="text-xs text-gray-500">As seller: <span style={{ color: CSU_GREEN, fontWeight: 'bold' }}>{overview.total_orders_as_seller}</span></p>
+              </div>
+            </div>
+          </div>
+
+          {/* Data Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all" style={{ borderTop: `3px solid ${CSU_GREEN}` }}>
+              <div className="flex items-center gap-2 mb-6">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: `${CSU_GREEN}10` }}>
+                  <Package className="w-5 h-5" style={{ color: CSU_GREEN }} />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Order Status</h3>
+              </div>
+              {orderStatusDistribution.length > 0 ? (
+                <div className="grid grid-cols-2 gap-4 items-center">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={ensureAllOrderStatuses(orderStatusDistribution).map(item => {
+                          let statusColor = CSU_GREEN;
+                          switch(item.order_status.toLowerCase()) {
+                            case 'completed': statusColor = '#10b981'; break;
+                            case 'pending': statusColor = '#f59e0b'; break;
+                            case 'accepted': statusColor = '#3b82f6'; break;
+                            case 'rejected': statusColor = '#ef4444'; break;
+                            case 'cancelled': statusColor = '#6b7280'; break;
+                            default: statusColor = CSU_GREEN;
+                          }
+                          return { name: item.order_status, value: item.count, color: statusColor };
+                        })}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={85}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {ensureAllOrderStatuses(orderStatusDistribution).map((item, index) => {
+                          let statusColor = CSU_GREEN;
+                          switch(item.order_status.toLowerCase()) {
+                            case 'completed': statusColor = '#10b981'; break;
+                            case 'pending': statusColor = '#f59e0b'; break;
+                            case 'accepted': statusColor = '#3b82f6'; break;
+                            case 'rejected': statusColor = '#ef4444'; break;
+                            case 'cancelled': statusColor = '#6b7280'; break;
+                            default: statusColor = CSU_GREEN;
+                          }
+                          return <Cell key={`cell-${index}`} fill={statusColor} />;
+                        })}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#fff', border: `1px solid ${CSU_GREEN}`, borderRadius: '6px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-2">
+                    {ensureAllOrderStatuses(orderStatusDistribution).map((status, idx) => {
+                      let statusColor = CSU_GREEN;
+                      switch(status.order_status.toLowerCase()) {
+                        case 'completed': statusColor = '#10b981'; break;
+                        case 'pending': statusColor = '#f59e0b'; break;
+                        case 'accepted': statusColor = '#3b82f6'; break;
+                        case 'rejected': statusColor = '#ef4444'; break;
+                        case 'cancelled': statusColor = '#6b7280'; break;
+                        default: statusColor = CSU_GREEN;
+                      }
+                      
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-gray-50 transition-all group" style={{ backgroundColor: `${statusColor}08` }}>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 group-hover:scale-125 transition-transform" style={{ backgroundColor: statusColor }} />
+                            <p className="text-xs font-semibold text-gray-800 capitalize truncate" style={{ color: statusColor }}>{status.order_status}</p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <p className="text-xs font-bold" style={{ color: statusColor }}>{status.count}</p>
+                            <p className="text-xs text-gray-400 w-8 text-right font-semibold">{status.percentage}%</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-8 text-sm">No data</p>
               )}
             </div>
 
-            {/* X-Axis Labels */}
-            <div className="flex justify-between mt-4 px-2">
-              {revenueData.map((data, index) => (
-                <span key={index} className="text-xs text-gray-500 font-medium">{data.label}</span>
-              ))}
-            </div>
-          </div>
-
-          {/* RIGHT: Visitor Insights */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">Visitor Insights</h3>
-            </div>
-
-            {/* Multi-Line Chart */}
-            <div className="relative h-48 mb-6">
-              <svg className="w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-                {/* Grid */}
-                {[0, 1, 2, 3].map(i => (
-                  <line key={i} x1="0" y1={50 * i} x2="400" y2={50 * i} stroke="#f5f5f5" strokeWidth="1" />
-                ))}
-
-                {/* Loyal Customers Line (Green) */}
-                <polyline
-                  points="0,150 50,120 100,140 150,100 200,110 250,80 300,90 350,60 400,70"
-                  fill="none"
-                  stroke={CSU_GREEN}
-                  strokeWidth="2"
-                />
-
-                {/* New Customers Line (Red) */}
-                <polyline
-                  points="0,180 50,160 100,170 150,140 200,150 250,120 300,130 350,100 400,110"
-                  fill="none"
-                  stroke="#FF6B6B"
-                  strokeWidth="2"
-                />
-
-                {/* Unique Customers Line (Purple) */}
-                <polyline
-                  points="0,160 50,140 100,150 150,120 200,130 250,100 300,110 350,80 400,90"
-                  fill="none"
-                  stroke="#9C27B0"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-
-            {/* Legend */}
-            <div className="grid grid-cols-3 gap-2 text-xs mb-6">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CSU_GREEN }}></div>
-                <span className="text-gray-600">Loyal</span>
+            {/* Sales Trend - GROUPED BAR CHART */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all" style={{ borderTop: `3px solid ${CSU_GREEN}` }}>
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5" style={{ color: CSU_GREEN }} />
+                <h3 className="text-lg font-bold text-gray-900">Sales Trend (Last 7 Days)</h3>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                <span className="text-gray-600">New</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                <span className="text-gray-600">Unique</span>
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-sm text-gray-600">Total Views</span>
-                <span className="text-lg font-bold text-gray-900">{overview.active_listings * 45}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-sm text-gray-600">Favorites</span>
-                <span className="text-lg font-bold text-gray-900">{overview.total_product_favorites}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Second Row - 3 Column Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Total Revenue Bar Chart */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-6">Total Revenue</h3>
-            <div className="space-y-4">
-              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, index) => {
-                const dayRevenue = salesPerformance[index]?.daily_revenue || 0;
-                const percentage = maxRevenue > 0 ? (dayRevenue / maxRevenue) * 100 : 0;
-                const isOnline = index % 2 === 0;
-                
-                return (
-                  <div key={day}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-gray-600">{day.substring(0, 3)}</span>
-                      <span className="text-xs font-semibold text-gray-900">{formatCurrency(dayRevenue)}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${percentage}%`,
-                            backgroundColor: isOnline ? CSU_GREEN : '#FFB547'
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-4 mt-6 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CSU_GREEN }}></div>
-                <span className="text-gray-600">Online Sales</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <span className="text-gray-600">Offline Sales</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Customer Satisfaction */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-6">Customer Satisfaction</h3>
-            <div className="relative h-48">
-              <svg className="w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-                {/* Area fills */}
-                <defs>
-                  <linearGradient id="lastMonthGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#4285F4" stopOpacity="0.2" />
-                    <stop offset="100%" stopColor="#4285F4" stopOpacity="0.05" />
-                  </linearGradient>
-                  <linearGradient id="thisMonthGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor={CSU_GREEN} stopOpacity="0.2" />
-                    <stop offset="100%" stopColor={CSU_GREEN} stopOpacity="0.05" />
-                  </linearGradient>
-                </defs>
-
-                {/* Last Month */}
-                <polygon
-                  points="0,200 0,120 50,110 100,115 150,105 200,110 250,100 300,105 350,95 400,100 400,200"
-                  fill="url(#lastMonthGradient)"
-                />
-                <polyline
-                  points="0,120 50,110 100,115 150,105 200,110 250,100 300,105 350,95 400,100"
-                  fill="none"
-                  stroke="#4285F4"
-                  strokeWidth="2"
-                />
-
-                {/* This Month */}
-                <polygon
-                  points="0,200 0,100 50,90 100,95 150,85 200,90 250,80 300,85 350,75 400,80 400,200"
-                  fill="url(#thisMonthGradient)"
-                />
-                <polyline
-                  points="0,100 50,90 100,95 150,85 200,90 250,80 300,85 350,75 400,80"
-                  fill="none"
-                  stroke={CSU_GREEN}
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <div className="flex items-center justify-between mt-6">
-              <div className="text-center">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                  <span className="text-xs text-gray-600">Last Month</span>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(overview.revenue_30d * 0.8)}</p>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CSU_GREEN }}></div>
-                  <span className="text-xs text-gray-600">This Month</span>
-                </div>
-                <p className="text-2xl font-bold" style={{ color: CSU_GREEN }}>{formatCurrency(overview.revenue_30d)}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Target vs Reality */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-6">Target vs Reality</h3>
-            <div className="relative h-48">
-              {/* Bar Chart */}
-              <div className="flex items-end justify-between h-full gap-2">
-                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) => {
-                  const realityHeight = Math.random() * 80 + 20;
-                  const targetHeight = Math.random() * 80 + 20;
-                  
-                  return (
-                    <div key={month} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="w-full flex gap-0.5">
-                        <div
-                          className="flex-1 rounded-t transition-all hover:opacity-80"
-                          style={{
-                            height: `${realityHeight}px`,
-                            backgroundColor: CSU_GREEN
-                          }}
-                        />
-                        <div
-                          className="flex-1 rounded-t transition-all hover:opacity-80"
-                          style={{
-                            height: `${targetHeight}px`,
-                            backgroundColor: '#FFB547'
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex items-center justify-between mt-6">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: CSU_GREEN_LIGHT }}>
-                  <TrendingUp className="w-4 h-4" style={{ color: CSU_GREEN }} />
-                </div>
-                <div className="text-left">
-                  <p className="text-xs text-gray-500">Reality Sales</p>
-                  <p className="text-sm font-bold text-gray-900">{overview.total_products_sold}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-100">
-                  <Award className="w-4 h-4 text-amber-600" />
-                </div>
-                <div className="text-left">
-                  <p className="text-xs text-gray-500">Target Sales</p>
-                  <p className="text-sm font-bold text-gray-900">{Math.round(overview.total_products_sold * 1.2)}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Third Row - More Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Top Products */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Top Products</h3>
-              <button
-                onClick={() => navigate('/my-listings')}
-                className="text-sm font-semibold px-3 py-1 rounded-lg hover:bg-gray-100 transition-colors"
-                style={{ color: CSU_GREEN }}
-              >
-                See all
-              </button>
-            </div>
-            <div className="space-y-4">
-              {topProducts.length === 0 ? (
-                <div className="text-center py-8">
-                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm text-gray-500">No products yet</p>
-                </div>
+              {salesTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart 
+                    data={salesTrendChartData}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={true} />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#6b7280" 
+                      style={{ fontSize: '13px', fontWeight: 500 }}
+                      tick={{ fill: '#6b7280' }}
+                    />
+                    <YAxis 
+                      stroke="#6b7280" 
+                      style={{ fontSize: '13px', fontWeight: 500 }}
+                      tick={{ fill: '#6b7280' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        border: `2px solid ${CSU_GREEN}`, 
+                        borderRadius: '10px', 
+                        boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                        padding: '12px'
+                      }}
+                      labelStyle={{ color: '#1f2937', fontWeight: 600, fontSize: '13px' }}
+                      cursor={{ fill: 'rgba(32, 135, 86, 0.05)' }}
+                    />
+                    <Legend 
+                      wrapperStyle={{ fontSize: '13px', fontWeight: 500, paddingTop: '20px' }}
+                      verticalAlign="bottom"
+                      height={30}
+                    />
+                    <Bar 
+                      dataKey="forSale" 
+                      fill="#fbbf24" 
+                      name="For Sale" 
+                      radius={[6, 6, 0, 0]}
+                      barSize={32}
+                    />
+                    <Bar 
+                      dataKey="forRent" 
+                      fill="#ef4444" 
+                      name="For Rent" 
+                      radius={[6, 6, 0, 0]}
+                      barSize={32}
+                    />
+                    <Bar 
+                      dataKey="services" 
+                      fill="#22c55e" 
+                      name="Services" 
+                      radius={[6, 6, 0, 0]}
+                      barSize={32}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               ) : (
-                topProducts.map((product, index) => {
-                  const percentage = totalCategoryRevenue > 0 ? (product.total_revenue / totalCategoryRevenue) * 100 : 0;
-                  
-                  return (
-                    <div key={product.product_id} className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors" onClick={() => navigate(`/product/${product.product_id}`)}>
-                      <span className="text-lg font-bold text-gray-400 w-8">{String(index + 1).padStart(2, '0')}</span>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{product.product_name}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${percentage}%`,
-                                backgroundColor: CHART_COLORS[index % CHART_COLORS.length]
-                              }}
-                            />
+                <p className="text-gray-500 text-center py-8">No sales data</p>
+              )}
+            </div>
+          </div>
+
+          {/* Category Performance & Top Products */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Monthly Revenue Trend - STACKED AREA CHART */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all" style={{ borderTop: `3px solid ${CSU_GREEN}` }}>
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp className="w-5 h-5" style={{ color: CSU_GREEN }} />
+                <h3 className="text-lg font-bold text-gray-900">Monthly Revenue Trend</h3>
+              </div>
+              {monthlyRevenue.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <AreaChart data={monthlyRevenueChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorRevenue1" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#fbbf24" stopOpacity={0.1}/>
+                      </linearGradient>
+                      <linearGradient id="colorRevenue2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0.1}/>
+                      </linearGradient>
+                      <linearGradient id="colorRevenue3" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0.1}/>
+                      </linearGradient>
+                      <linearGradient id="colorRevenue4" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={true} />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#6b7280" 
+                      style={{ fontSize: '13px', fontWeight: 500 }}
+                      tick={{ fill: '#6b7280' }}
+                    />
+                    <YAxis 
+                      stroke="#6b7280" 
+                      style={{ fontSize: '13px', fontWeight: 500 }}
+                      tick={{ fill: '#6b7280' }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        border: `2px solid ${CSU_GREEN}`, 
+                        borderRadius: '10px', 
+                        boxShadow: '0 8px 16px rgba(0,0,0,0.12)',
+                        padding: '12px'
+                      }}
+                      formatter={(value: any) => `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 0 })}`}
+                      labelStyle={{ color: '#1f2937', fontWeight: 600, fontSize: '13px' }}
+                      cursor={{ fill: 'rgba(32, 135, 86, 0.05)' }}
+                    />
+                    <Legend 
+                      wrapperStyle={{ fontSize: '13px', fontWeight: 500, paddingTop: '20px' }}
+                      iconType="line"
+                      verticalAlign="bottom"
+                      height={30}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="revenue" 
+                      stackId="1"
+                      stroke="#fbbf24" 
+                      strokeWidth={3}
+                      fillOpacity={1} 
+                      fill="url(#colorRevenue1)"
+                      name="Q1 Revenue"
+                      dot={{ fill: '#fbbf24', r: 4 }}
+                      activeDot={{ r: 7, fill: '#fbbf24' }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="transactions" 
+                      stackId="1"
+                      stroke="#ef4444" 
+                      strokeWidth={3}
+                      fillOpacity={1} 
+                      fill="url(#colorRevenue2)"
+                      name="Q2 Revenue"
+                      dot={{ fill: '#ef4444', r: 4 }}
+                      activeDot={{ r: 7, fill: '#ef4444' }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="avgValue" 
+                      stackId="1"
+                      stroke="#22c55e" 
+                      strokeWidth={3}
+                      fillOpacity={1} 
+                      fill="url(#colorRevenue3)"
+                      name="Q3 Revenue"
+                      dot={{ fill: '#22c55e', r: 4 }}
+                      activeDot={{ r: 7, fill: '#22c55e' }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="avgValue" 
+                      stackId="1"
+                      stroke="#3b82f6" 
+                      strokeWidth={2.5}
+                      fillOpacity={1} 
+                      fill="url(#colorRevenue4)"
+                      name="Q4 Revenue"
+                      dot={false}
+                      activeDot={{ r: 6 }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-gray-500 text-center py-8">No revenue data</p>
+              )}
+            </div>
+
+            {/* Top Products */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all" style={{ borderTop: `3px solid ${CSU_GREEN}` }}>
+              <div className="flex items-center gap-2 mb-6">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: `${CSU_GREEN}10` }}>
+                  <Star className="w-5 h-5" style={{ color: CSU_GREEN }} />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Top Products</h3>
+              </div>
+              {topProducts.length > 0 ? (
+                <div className="space-y-3">
+                  {topProducts.slice(0, 5).map((product, idx) => (
+                    <div 
+                      key={idx} 
+                      className="group flex items-center gap-4 p-4 bg-white rounded-xl cursor-pointer transition-all hover:bg-gradient-to-r hover:from-gray-50 hover:to-white shadow-sm border border-gray-200 hover:border-gray-300 hover:shadow-md" 
+                      onClick={() => navigate(`/product/${product.product_id}`)}
+                    >
+                      {/* Rank Badge */}
+                      <div className="flex-shrink-0">
+                        <span 
+                          className="text-sm font-bold text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md" 
+                          style={{ backgroundColor: CSU_GREEN }}
+                        >
+                          {idx + 1}
+                        </span>
+                      </div>
+
+                      {/* Product Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-[#208756] transition-colors">{product.product_name}</p>
+                        
+                        {/* Icons & Metrics Display */}
+                        <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                          {/* Views */}
+                          <div className="flex items-center gap-1">
+                            <svg className="w-3 h-3 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <circle cx="12" cy="12" r="3" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                            <span className="text-xs text-gray-500">{product.view_count}</span>
+                          </div>
+
+                          {/* Sold - Using Cart Icon */}
+                          <div className="flex items-center gap-1">
+                            <svg className="w-3 h-3 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none">
+                              <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
+                                  stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                            <span className="text-xs text-gray-500">{product.sales_count}</span>
+                          </div>
+
+                          {/* Favorites */}
+                          <div className="flex items-center gap-1">
+                            <svg className="w-3 h-3 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none">
+                              <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                                  stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                            <span className="text-xs text-gray-500">{product.favorite_count}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-gray-900">{formatCurrency(product.total_revenue)}</p>
-                        <p className="text-xs text-gray-500">{product.sales_count} sales</p>
+
+                      {/* Revenue Section */}
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-bold text-gray-900 text-sm group-hover:text-[#208756] transition-colors">{formatCurrency(product.total_revenue)}</p>
+                        <p className="text-xs text-gray-500 group-hover:text-gray-700 transition-colors">{formatCurrency(product.price)}</p>
                       </div>
                     </div>
-                  );
-                })
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-8">No products yet</p>
               )}
             </div>
           </div>
 
-          {/* Sales Mapping by Country */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-6">Sales Mapping by Location</h3>
-            <div className="relative h-48 bg-gray-50 rounded-lg flex items-center justify-center mb-4">
-              <MapPin className="w-16 h-16 text-gray-300" />
-              <p className="absolute bottom-4 text-xs text-gray-500">Philippines - CSU Campus</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <p className="text-2xl font-bold" style={{ color: CSU_GREEN }}>{overview.active_listings}</p>
-                <p className="text-xs text-gray-600 mt-1">Active Zones</p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg">
-                <p className="text-2xl font-bold text-gray-900">{overview.total_orders_as_buyer}</p>
-                <p className="text-xs text-gray-600 mt-1">Total Orders</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Volume vs Service Level */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-6">Volume vs Service Level</h3>
-            <div className="relative h-48">
-              <div className="flex items-end justify-between h-full gap-2">
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((_, index) => {
-                  const volumeHeight = Math.random() * 120 + 40;
-                  const serviceHeight = Math.random() * 100 + 30;
-                  
-                  return (
-                    <div key={index} className="flex-1 flex gap-1">
-                      <div
-                        className="flex-1 rounded-t transition-all hover:opacity-80"
-                        style={{
-                          height: `${volumeHeight}px`,
-                          backgroundColor: CSU_GREEN
-                        }}
-                      />
-                      <div
-                        className="flex-1 rounded-t transition-all hover:opacity-80"
-                        style={{
-                          height: `${serviceHeight}px`,
-                          backgroundColor: '#34D399'
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex items-center justify-between mt-6">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CSU_GREEN }}></div>
-                <div>
-                  <p className="text-xs text-gray-600">Volume</p>
-                  <p className="text-sm font-bold text-gray-900">{overview.total_products_posted}</p>
+          {/* Order Status & Recent Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Order Status Distribution - COLORFUL DONUT CHART */}
+            {/* Category Performance - DONUT CHART */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all" style={{ borderTop: `3px solid ${CSU_GREEN}` }}>
+              <div className="flex items-center gap-2 mb-6">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: `${CSU_GREEN}10` }}>
+                  <PieChartIcon className="w-5 h-5" style={{ color: CSU_GREEN }} />
                 </div>
+                <h3 className="text-lg font-semibold text-gray-900">Category Performance</h3>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-400"></div>
-                <div>
-                  <p className="text-xs text-gray-600">Services</p>
-                  <p className="text-sm font-bold text-gray-900">{overview.active_listings}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Row - Income Breakdown + Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Income Breakdown Donut Chart */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">Income Breakdown</h3>
-              <button className="px-4 py-2 rounded-lg text-sm font-semibold text-white shadow-md" style={{ backgroundColor: CSU_GREEN }}>
-                Month
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between">
-              {/* Donut Chart */}
-              <div className="relative w-64 h-64">
-                {categoryRevenue.length > 0 ? (
-                  <>
-                    <svg viewBox="0 0 200 200" className="w-full h-full transform -rotate-90">
-                      {(() => {
-                        let currentAngle = 0;
-                        return categoryRevenue.map((category, index) => {
-                          const percentage = (category.category_revenue / totalCategoryRevenue) * 100;
-                          const angle = (percentage / 100) * 360;
-                          const startAngle = currentAngle;
-                          currentAngle += angle;
-                          const startRad = (startAngle * Math.PI) / 180;
-                          const endRad = (currentAngle * Math.PI) / 180;
-                          const outerRadius = 95;
-                          const innerRadius = 65;
-                          const x1Outer = 100 + outerRadius * Math.cos(startRad);
-                          const y1Outer = 100 + outerRadius * Math.sin(startRad);
-                          const x2Outer = 100 + outerRadius * Math.cos(endRad);
-                          const y2Outer = 100 + outerRadius * Math.sin(endRad);
-                          const x1Inner = 100 + innerRadius * Math.cos(endRad);
-                          const y1Inner = 100 + innerRadius * Math.sin(endRad);
-                          const x2Inner = 100 + innerRadius * Math.cos(startRad);
-                          const y2Inner = 100 + innerRadius * Math.sin(startRad);
-                          const largeArc = angle > 180 ? 1 : 0;
-                          const pathData = [
-                            `M ${x1Outer} ${y1Outer}`,
-                            `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${x2Outer} ${y2Outer}`,
-                            `L ${x1Inner} ${y1Inner}`,
-                            `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x2Inner} ${y2Inner}`,
-                            'Z'
-                          ].join(' ');
-                          return (
-                            <path
-                              key={index}
-                              d={pathData}
-                              fill={CHART_COLORS[index % CHART_COLORS.length]}
-                              className="hover:opacity-80 transition-opacity cursor-pointer"
-                            />
-                          );
-                        });
-                      })()}
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <p className="text-3xl font-bold text-gray-900">{formatCurrency(totalCategoryRevenue)}</p>
-                        <p className="text-xs text-gray-500 mt-1">Total Income</p>
+              {categoryPerformance.length > 0 ? (
+                <div className="grid grid-cols-2 gap-4 items-center">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={categoryChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={85}
+                        paddingAngle={2}
+                        dataKey="revenue"
+                      >
+                        {categoryChartData.map((_entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: any) => `₱${Number(value).toLocaleString()}`}
+                        contentStyle={{ backgroundColor: '#fff', border: `1px solid ${CSU_GREEN}`, borderRadius: '6px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-2">
+                    {categoryChartData.map((cat, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg hover:bg-gray-50 transition-all group" style={{ backgroundColor: `${COLORS[idx % COLORS.length]}08` }}>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div 
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0 group-hover:scale-125 transition-transform" 
+                            style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                          />
+                          <p className="text-xs font-semibold text-gray-800 truncate" style={{ color: COLORS[idx % COLORS.length] }}>{cat.name}</p>
+                        </div>
+                        <p className="text-xs font-bold" style={{ color: COLORS[idx % COLORS.length] }}>{cat.transactions}</p>
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <PieChart className="w-16 h-16 text-gray-300" />
+                    ))}
                   </div>
-                )}
-              </div>
-
-              {/* Legend */}
-              <div className="flex-1 pl-12 space-y-4">
-                {categoryRevenue.map((category, index) => {
-                  const percentage = totalCategoryRevenue > 0 ? ((category.category_revenue / totalCategoryRevenue) * 100).toFixed(1) : 0;
-                  
-                  return (
-                    <div key={index} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-4 h-4 rounded"
-                          style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-                        />
-                        <span className="text-sm font-medium text-gray-700">{category.category_name}</span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-gray-900">{formatCurrency(category.category_revenue)}</p>
-                        <p className="text-xs text-gray-500">{percentage}%</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Latest Events */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold text-gray-900">Latest Events</h3>
-              <button
-                onClick={() => navigate('/my-orders')}
-                className="text-sm font-semibold"
-                style={{ color: CSU_GREEN }}
-              >
-                View all
-              </button>
-            </div>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {recentActivity.length === 0 ? (
-                <div className="text-center py-12">
-                  <Activity className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm text-gray-500">No recent activity</p>
                 </div>
               ) : (
-                recentActivity.map((activity) => (
-                  <div key={activity.activity_id} className="flex items-start gap-3 pb-4 border-b border-gray-100 last:border-0">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: CSU_GREEN_LIGHT }}>
-                      {activity.activity_type === 'listing_created' && <Package className="w-5 h-5" style={{ color: CSU_GREEN }} />}
-                      {activity.activity_type === 'order_received' && <ShoppingCart className="w-5 h-5" style={{ color: CSU_GREEN }} />}
-                      {activity.activity_type === 'order_placed' && <FileText className="w-5 h-5" style={{ color: CSU_GREEN }} />}
-                      {activity.activity_type === 'review_received' && <Star className="w-5 h-5" style={{ color: CSU_GREEN }} />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{activity.description}</p>
-                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatTime(activity.timestamp)}
-                      </p>
-                    </div>
-                  </div>
-                ))
+                <p className="text-gray-500 text-center py-8 text-sm">No data</p>
+              )}
+            </div>
+
+            {/* Recent Activity */}
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all" style={{ borderTop: `3px solid ${CSU_GREEN}` }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Activity className="w-5 h-5" style={{ color: CSU_GREEN }} />
+                <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
+              </div>
+              {recentActivity.length > 0 ? (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {recentActivity.slice(0, 10).map((activity, idx) => {
+                    let activityLabel = '';
+                    let activityColor = CSU_GREEN;
+                    
+                    switch(activity.activity_type) {
+                      case 'product_created':
+                        // Show SERVICE POSTED for services, PRODUCT POSTED for others
+                        activityLabel = activity.listing_type === 'SERVICE' ? 'SERVICE POSTED' : 'PRODUCT POSTED';
+                        activityColor = '#f59e0b';
+                        break;
+                      case 'product_favorite':
+                        activityLabel = 'ADDED TO FAVORITES';
+                        activityColor = '#ef4444';
+                        break;
+                      case 'order_placed':
+                        activityLabel = 'SOLD';
+                        activityColor = '#10b981';
+                        break;
+                      case 'product_view':
+                        activityLabel = 'VIEWED';
+                        activityColor = '#3b82f6';
+                        break;
+                      default:
+                        activityLabel = 'ACTIVITY';
+                        activityColor = CSU_GREEN;
+                    }
+                    
+                    return (
+                      <div key={idx} className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-all group" style={{ backgroundColor: `${activityColor}08` }}>
+                        <div className="p-2.5 rounded-lg mt-1 flex-shrink-0 group-hover:scale-110 transition-transform" style={{ backgroundColor: `${activityColor}20` }}>
+                          {activity.activity_type === 'product_created' && <Package className="w-4 h-4" style={{ color: activityColor }} />}
+                          {activity.activity_type === 'product_favorite' && <Heart className="w-4 h-4" style={{ color: activityColor }} />}
+                          {activity.activity_type === 'order_placed' && <ShoppingCart className="w-4 h-4" style={{ color: activityColor }} />}
+                          {activity.activity_type === 'product_view' && <Eye className="w-4 h-4" style={{ color: activityColor }} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{activity.activity_description}</p>
+                            <span className="text-xs font-bold px-2 py-1 rounded-full flex-shrink-0" style={{ backgroundColor: `${activityColor}20`, color: activityColor }}>
+                              {activityLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-1 flex-wrap">
+                              <p className="text-xs text-gray-500">{activity.category_name}</p>
+                              {activity.activity_type === 'product_favorite' && activity.user_name && (
+                                <p className="text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap" style={{ backgroundColor: `${activityColor}20`, color: activityColor }}>
+                                  Added by: {activity.user_name}
+                                </p>
+                              )}
+                              {activity.activity_type === 'product_view' && activity.user_name && (
+                                <p className="text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap" style={{ backgroundColor: `${activityColor}20`, color: activityColor }}>
+                                  {activity.user_name}
+                                </p>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 flex items-center gap-1 flex-shrink-0">
+                              <Clock className="w-3 h-3" />
+                              {formatTime(activity.activity_timestamp)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-8">No recent activity</p>
               )}
             </div>
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   );
 };

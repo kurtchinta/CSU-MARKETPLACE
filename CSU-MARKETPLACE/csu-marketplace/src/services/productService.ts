@@ -315,9 +315,7 @@ class ProductService {
       }
 
       const { data, error } = await query
-        .eq('is_available', true)
-        .order('created_at', { ascending: false })
-        .limit(50);
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('❌ Error fetching products:', error);
@@ -774,6 +772,40 @@ class ProductService {
     } catch (error: any) {
       console.error(`❌ Error rejecting product ${productId}:`, error);
       throw new Error(error.message || 'Failed to reject product');
+    }
+  }
+
+  // Increment product view count
+  async incrementViewCount(productId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!supabase) {
+        return { success: false, error: 'Database connection not available' };
+      }
+
+      // Increment the view_count column
+      const { error } = await supabase.rpc('increment_product_views', {
+        product_id: productId
+      });
+
+      if (error) {
+        // Fallback: Use direct update if RPC doesn't exist
+        console.warn('⚠️ RPC not available, using direct update');
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ view_count: supabase.raw('view_count + 1') })
+          .eq('product_id', productId);
+
+        if (updateError) {
+          console.warn('⚠️ Could not increment view count:', updateError);
+          return { success: false, error: updateError.message };
+        }
+      }
+
+      console.log(`📈 View count incremented for product ${productId}`);
+      return { success: true };
+    } catch (error: any) {
+      console.warn('⚠️ Error incrementing view count:', error.message);
+      return { success: false, error: error.message };
     }
   }
 }

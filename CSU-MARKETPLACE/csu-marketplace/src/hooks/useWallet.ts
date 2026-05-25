@@ -31,7 +31,7 @@ export const useWallet = (): UseWalletReturn => {
   });
 
   // Contract configuration (Updated: Nov 16, 2025 - Verified on Etherscan)
-  const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS || "0x742e1FE604CAD88CB58A67BA23e407c6A15bAFa6";
+  const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS || "0x7597d6fe0329aF3DD4b47E7874f1745ADa9C9AaE";
   const contractABI = abi.abi;
 
   // Connect wallet function with enhanced error handling and modal support

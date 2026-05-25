@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { useModal } from '../context/ModalContext';
+import Footer from '../components/Footer';
 
 export const ConfirmEmailPage: React.FC = () => {
   const [isVerifying, setIsVerifying] = useState(true);
@@ -168,6 +169,7 @@ export const ConfirmEmailPage: React.FC = () => {
           Go to Homepage
         </button>
       </div>
+      <Footer />
     </div>
   );
 };

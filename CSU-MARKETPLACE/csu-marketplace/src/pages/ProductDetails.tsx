@@ -6,7 +6,8 @@ import { useCart } from '../context/CartContext';
 import { productService, type Product } from '../services/productService';
 import { supabase } from '../lib/supabase';
 import ImageCarousel from '../components/ImageCarousel';
-import { Star, Package, X } from 'lucide-react';
+import Footer from '../components/Footer';
+import { Star, X, Loader } from 'lucide-react';
 
 const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -16,7 +17,7 @@ const ProductDetails: React.FC = () => {
   }, []);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { showError, showSuccess } = useModal();
   const { addToCart } = useCart();
 
@@ -33,7 +34,8 @@ const ProductDetails: React.FC = () => {
   const [reviewText, setReviewText] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewImages, setReviewImages] = useState<File[]>([]);
-  const [reviewImagePreviews, setReviewImagePreviews] = useState<string[]>([]);
+  const [deletingProduct, setDeletingProduct] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const reviewsPerPage = 5;
 
   // Review state from navigation
@@ -62,6 +64,17 @@ const ProductDetails: React.FC = () => {
         console.log('✅ Product loaded:', result.data.product_name);
         console.log('📷 Product images:', result.data.images);
         setProduct(result.data);
+        
+        // Increment view count when product is viewed
+        if (id) {
+          const viewResult = await productService.incrementViewCount(Number(id));
+          if (viewResult.success) {
+            console.log('📈 View count incremented');
+          } else {
+            console.warn('⚠️ Could not increment view count:', viewResult.error);
+          }
+        }
+        
         await loadSellerInfo(result.data.user_id);
         await loadProductReviews(result.data.product_id);
       } else {
@@ -265,32 +278,31 @@ const ProductDetails: React.FC = () => {
     });
   };
 
-  const handleReviewImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
+  const handleDeleteProduct = async () => {
+    if (!product || !user) return;
 
-    const fileArray = Array.from(files);
-    if (fileArray.length + reviewImages.length > 5) {
-      showError('Too Many Images', 'You can upload up to 5 images only');
-      return;
+    setDeletingProduct(true);
+    try {
+      const result = await productService.adminDeleteProduct(product.product_id);
+
+      if (result.success) {
+        setShowDeleteConfirm(false);
+        showSuccess('Product Deleted', 'The product has been successfully deleted');
+        setTimeout(() => {
+          navigate('/admin');
+        }, 1500);
+      } else {
+        showError('Delete Failed', result.error || 'Failed to delete product');
+      }
+    } catch (error: any) {
+      console.error('❌ Error deleting product:', error);
+      showError('Error', error.message || 'Failed to delete product');
+    } finally {
+      setDeletingProduct(false);
     }
-
-    setReviewImages([...reviewImages, ...fileArray]);
-
-    // Generate previews
-    fileArray.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReviewImagePreviews(prev => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
   };
 
-  const removeReviewImage = (index: number) => {
-    setReviewImages(reviewImages.filter((_, i) => i !== index));
-    setReviewImagePreviews(reviewImagePreviews.filter((_, i) => i !== index));
-  };
+
 
   const handleSubmitReview = async () => {
     if (!user || !reviewState) return;
@@ -397,7 +409,6 @@ const ProductDetails: React.FC = () => {
       setReviewRating(0);
       setReviewText('');
       setReviewImages([]);
-      setReviewImagePreviews([]);
       
       // Reload reviews to show the new one
       if (product) {
@@ -484,10 +495,10 @@ const ProductDetails: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f8f9fa' }}>
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mb-4"></div>
-          <p className="text-gray-600">Loading product details...</p>
+          <Loader className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: '#208756' }} />
+          <p style={{ color: '#666666' }}>Loading product details...</p>
         </div>
       </div>
     );
@@ -547,9 +558,12 @@ const ProductDetails: React.FC = () => {
                       className="h-full w-full"
                     />
                   ) : (
-                    <div className="h-full w-full flex flex-col items-center justify-center bg-gray-100">
-                      <Package className="w-24 h-24 text-gray-300" />
-                      <span className="text-gray-500 mt-2">No images available</span>
+                    <div className="h-full w-full flex flex-col items-center justify-center bg-gray-200 rounded-lg">
+                      <svg className="w-24 h-24 text-gray-400 mb-4" viewBox="0 0 24 24" fill="none">
+                        <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
+                          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      <p className="text-gray-400 text-base">No image available</p>
                     </div>
                   );
                 })()}
@@ -718,7 +732,85 @@ const ProductDetails: React.FC = () => {
               )}
 
               {/* Action Buttons - Add to Cart & Buy Now */}
-              {!isOwnProduct && (
+              {profile?.is_admin ? (
+                // Admin Section - No purchase buttons, only delete button shown separately
+                <div className="space-y-4 pt-2">
+                  <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        <div>
+                          <p className="font-semibold text-yellow-900">Admin View</p>
+                          <p className="text-sm text-yellow-700 mt-1">You are viewing this product as an administrator. Use the delete button to remove it if needed.</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        disabled={deletingProduct}
+                        className="px-4 py-2 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-[1.02] shadow-md hover:shadow-lg border-2 flex items-center gap-2 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        style={{
+                          backgroundColor: '#dc2626',
+                          borderColor: '#dc2626',
+                          color: 'white'
+                        }}
+                        onMouseOver={(e) => !deletingProduct && (e.currentTarget.style.backgroundColor = '#991b1b')}
+                        onMouseOut={(e) => !deletingProduct && (e.currentTarget.style.backgroundColor = '#dc2626')}
+                      >
+                        {deletingProduct ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            <span className="text-sm">Deleting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            <span className="text-sm">Delete</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : isOwnProduct ? (
+                // Product Owner Section
+                <div className="space-y-4 pt-2">
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <svg className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <div>
+                        <p className="font-semibold text-blue-900">This is Your Product</p>
+                        <p className="text-sm text-blue-700 mt-1">You are viewing your own product listing. You cannot purchase your own items.</p>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/edit-product/${product.product_id}`)}
+                    className="w-full px-6 py-3 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-[1.02] shadow-md hover:shadow-lg border-2"
+                    style={{
+                      backgroundColor: '#208756',
+                      borderColor: '#208756',
+                      color: 'white'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.backgroundColor = '#1a6d46';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.backgroundColor = '#208756';
+                    }}
+                  >
+                    Edit Product
+                  </button>
+                </div>
+              ) : (
                 <div className="flex items-center gap-3 pt-2">
                   {product.listing_type === 'FOR_SALE' ? (
                     <>
@@ -731,14 +823,6 @@ const ProductDetails: React.FC = () => {
                           borderColor: '#208756',
                           color: '#208756'
                         }}
-                        onMouseOver={(e) => {
-                          e.currentTarget.style.backgroundColor = '#208756';
-                          e.currentTarget.style.color = 'white';
-                        }}
-                        onMouseOut={(e) => {
-                          e.currentTarget.style.backgroundColor = 'white';
-                          e.currentTarget.style.color = '#208756';
-                        }}
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -749,19 +833,17 @@ const ProductDetails: React.FC = () => {
                       {/* Buy Now Button */}
                       <button
                         onClick={handleBuyNow}
-                        className="flex-1 px-6 py-3 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-[1.02] shadow-md hover:shadow-lg border-2"
+                        className="flex-1 px-6 py-3 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-[1.02] shadow-md hover:shadow-lg flex items-center justify-center gap-2 border-2"
                         style={{
                           backgroundColor: '#208756',
                           borderColor: '#208756',
                           color: 'white'
                         }}
                         onMouseOver={(e) => {
-                          e.currentTarget.style.backgroundColor = 'white';
-                          e.currentTarget.style.color = '#208756';
+                          e.currentTarget.style.backgroundColor = '#1a6d46';
                         }}
                         onMouseOut={(e) => {
                           e.currentTarget.style.backgroundColor = '#208756';
-                          e.currentTarget.style.color = 'white';
                         }}
                       >
                         Buy Now
@@ -777,12 +859,10 @@ const ProductDetails: React.FC = () => {
                         color: 'white'
                       }}
                       onMouseOver={(e) => {
-                        e.currentTarget.style.backgroundColor = 'white';
-                        e.currentTarget.style.color = '#208756';
+                        e.currentTarget.style.backgroundColor = '#1a6d46';
                       }}
                       onMouseOut={(e) => {
                         e.currentTarget.style.backgroundColor = '#208756';
-                        e.currentTarget.style.color = 'white';
                       }}
                     >
                       Rent Now
@@ -797,12 +877,10 @@ const ProductDetails: React.FC = () => {
                         color: 'white'
                       }}
                       onMouseOver={(e) => {
-                        e.currentTarget.style.backgroundColor = 'white';
-                        e.currentTarget.style.color = '#208756';
+                        e.currentTarget.style.backgroundColor = '#1a6d46';
                       }}
                       onMouseOut={(e) => {
                         e.currentTarget.style.backgroundColor = '#208756';
-                        e.currentTarget.style.color = 'white';
                       }}
                     >
                       Get Service Now
@@ -825,11 +903,11 @@ const ProductDetails: React.FC = () => {
         </div>
 
         {/* Seller Information Section */}
-        <div className="bg-white rounded-lg shadow-sm mb-4">
+        <div className="bg-white rounded-lg shadow-sm mb-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/seller/${product.user_id}`, { state: { productName: product.product_name, productId: product.product_id } })}>
           <div className="p-6">
             <div className="flex items-center gap-4">
               {/* Seller Avatar */}
-              <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold overflow-hidden border-4" style={{ backgroundColor: '#208756', borderColor: '#ff9500' }}>
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold overflow-hidden border-4" style={{ backgroundColor: '#208756', borderColor: '#208756' }}>
                 {sellerInfo?.profile_picture_url ? (
                   <img 
                     src={sellerInfo.profile_picture_url}
@@ -850,7 +928,7 @@ const ProductDetails: React.FC = () => {
               
               {/* Seller Details */}
               <div className="flex-1">
-                <h3 className="text-xl font-bold text-gray-900 mb-1">
+                <h3 className="text-xl font-bold text-gray-900 mb-1 hover:text-green-600 transition-colors">
                   {sellerInfo?.first_name} {sellerInfo?.last_name}
                 </h3>
                 <p className="text-sm text-gray-600 mb-2">
@@ -886,6 +964,13 @@ const ProductDetails: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+              
+              {/* View Profile Arrow */}
+              <div className="text-gray-400 group-hover:text-green-600 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </div>
             </div>
           </div>
@@ -1338,58 +1423,6 @@ const ProductDetails: React.FC = () => {
                 </p>
               </div>
 
-              {/* Image Upload */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Add Photos (Optional)
-                </label>
-                <div className="space-y-3">
-                  {/* Image Previews */}
-                  {reviewImagePreviews.length > 0 && (
-                    <div className="flex flex-wrap gap-3">
-                      {reviewImagePreviews.map((preview, index) => (
-                        <div key={index} className="relative group">
-                          <img
-                            src={preview}
-                            alt={`Preview ${index + 1}`}
-                            className="w-20 h-20 object-cover rounded-lg border-2 border-gray-300"
-                          />
-                          <button
-                            onClick={() => removeReviewImage(index)}
-                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
-                            type="button"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {/* Upload Button */}
-                  {reviewImages.length < 5 && (
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-500 transition-colors">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <svg className="w-8 h-8 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        <p className="text-xs text-gray-500">
-                          <span className="font-semibold">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-gray-400">PNG, JPG up to 5MB ({5 - reviewImages.length} remaining)</p>
-                      </div>
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept="image/*"
-                        multiple
-                        onChange={handleReviewImageChange}
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
-
               {/* Submit Button */}
               <button
                 onClick={handleSubmitReview}
@@ -1415,7 +1448,85 @@ const ProductDetails: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-opacity-40 bg-blur-30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Modal Header */}
+            <div className="bg-red-50 border-b border-red-200 px-6 py-4 flex items-start gap-3">
+              <svg className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <h3 className="text-lg font-bold text-red-900">Delete Product</h3>
+                <p className="text-sm text-red-700 mt-1">This action cannot be undone</p>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-6 py-6">
+              <p className="text-gray-700 mb-4">
+                Are you sure you want to delete <span className="font-semibold">"{product?.product_name}"</span>? This product will be permanently removed from the marketplace.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <p className="text-sm text-red-800">
+                  <span className="font-semibold">Warning:</span> This action is permanent and cannot be reversed. All related data will be deleted.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 border-t px-6 py-4 flex items-center gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deletingProduct}
+                className="px-6 py-2 rounded-lg font-semibold transition-all border-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  borderColor: '#e5e7eb',
+                  color: '#374151',
+                  backgroundColor: 'white'
+                }}
+                onMouseOver={(e) => !deletingProduct && (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+                onMouseOut={(e) => !deletingProduct && (e.currentTarget.style.backgroundColor = 'white')}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteProduct}
+                disabled={deletingProduct}
+                className="px-6 py-2 rounded-lg font-semibold text-white transition-all border-2 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: '#dc2626',
+                  borderColor: '#dc2626',
+                  color: 'white'
+                }}
+                onMouseOver={(e) => !deletingProduct && (e.currentTarget.style.backgroundColor = '#991b1b')}
+                onMouseOut={(e) => !deletingProduct && (e.currentTarget.style.backgroundColor = '#dc2626')}
+              >
+                {deletingProduct ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span className="text-sm">Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span className="text-sm">Delete Product</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
+      <Footer />
     </div>
   );
 };

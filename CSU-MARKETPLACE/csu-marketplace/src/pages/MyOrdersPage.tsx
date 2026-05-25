@@ -19,6 +19,7 @@ import {
   Check,
   Trash2
 } from 'lucide-react';
+import Footer from '../components/Footer';
 
 interface OrderDetail {
   order_id: string;
@@ -93,6 +94,21 @@ export default function MyOrdersPage() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
+  const [processingCancelId, setProcessingCancelId] = useState<string | null>(null);
+  const [processingDeleteId, setProcessingDeleteId] = useState<string | null>(null);
+
+  // Transaction status to border color mapping
+  const getStatusColor = (status?: string): string => {
+    const normalizedStatus = (status || 'pending').toLowerCase();
+    const colorMap: Record<string, string> = {
+      'pending': '#fbbf24',      // Yellow/amber
+      'accepted': '#10b981',     // Green
+      'rejected': '#ef4444',     // Red
+      'completed': '#3b82f6',    // Blue
+      'cancelled': '#f59e0b',    // Orange
+    };
+    return colorMap[normalizedStatus] || '#208756'; // Default green
+  };
 
   const normalizeStatus = (status?: string, fallback?: string) => {
     // Normalize status to lowercase for consistent display
@@ -105,20 +121,20 @@ export default function MyOrdersPage() {
     const map = new Map<string, TransactionRecord>();
     if (!supabase || orderIds.length === 0) return map;
 
-    // ✅ V6.5 FIX: Fetch the LATEST transaction for each order (handles multi-transaction model)
+    // V6.5 FIX: Fetch the LATEST transaction for each order (handles multi-transaction model)
     // This will show the current status (PENDING, ACCEPTED, REJECTED, CANCELLED, etc.)
     const { data: transactionRecords, error } = await supabase
       .from('transactions')
       .select('order_id, transaction_id, blockchain_tx_hash, transaction_status, message_to_seller, buyer_wallet, pending_at, created_at')
       .in('order_id', orderIds)
-      .order('created_at', { ascending: false });  // ✅ Get LATEST transaction (most recent)
+      .order('created_at', { ascending: false });  // Get LATEST transaction (most recent)
 
     if (error) {
       console.error('Error loading transaction information:', error);
       return map;
     }
 
-    // ✅ Store the LATEST transaction for each order (shows current status)
+    // Store the LATEST transaction for each order (shows current status)
     (transactionRecords || []).forEach((record: TransactionRecord) => {
       if (record.order_id && !map.has(record.order_id)) {
         map.set(record.order_id, record);
@@ -227,6 +243,8 @@ export default function MyOrdersPage() {
                 rental_duration: order.rental_duration,
                 start_date: order.start_date,
                 end_date: order.end_date,
+                service_duration: order.service_duration,  // ✅ ADDED: SERVICE listing type
+                service_schedule: order.service_schedule,  // ✅ ADDED: SERVICE listing type (preferred date)
                 return_condition: productData?.return_condition || order.return_condition
               };
 
@@ -358,28 +376,28 @@ export default function MyOrdersPage() {
 
     try {
       console.log('');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('✅ STARTING ORDER COMPLETION PROCESS (BUYER)');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📦 Order ID:', order.order_id);
-      console.log('🔗 Transaction ID (Supabase):', order.transaction_id);
-      console.log('👤 Buyer ID:', user?.id);
-      console.log('🏪 Seller ID:', order.seller_id);
+      console.log('=============================================================');
+      console.log('STARTING ORDER COMPLETION PROCESS (BUYER)');
+      console.log('=============================================================');
+      console.log('Order ID:', order.order_id);
+      console.log('Transaction ID (Supabase):', order.transaction_id);
+      console.log('Buyer ID:', user?.id);
+      console.log('Seller ID:', order.seller_id);
       console.log('');
 
       // Get currently connected wallet
       const currentWallet = await blockchainService.getWalletAddress();
       if (!currentWallet) {
         showError('Error', 'Please connect your MetaMask wallet first');
-        setProcessingOrderId(null);
+        setProcessingCancelId(null);
         return;
       }
-      console.log('🔗 Using wallet:', currentWallet);
+      console.log('Using wallet:', currentWallet);
       console.log('');
 
       // Generate NEW transaction_id for V6.6 completion
       const newTransactionId = crypto.randomUUID();
-      console.log('📤 Step 1: Calling blockchain service to complete transaction (V6.6)...');
+      console.log('Step 1: Calling blockchain service to complete transaction (V6.6)...');
       console.log('   Original transaction_id:', order.transaction_id);
       console.log('   NEW transaction_id:', newTransactionId);
       console.log('   Using wallet:', currentWallet);
@@ -389,7 +407,7 @@ export default function MyOrdersPage() {
         newTransactionId       // NEW transaction ID for completion
       );
 
-      console.log('📥 Step 2: Blockchain service response received');
+      console.log('Step 2: Blockchain service response received');
       console.log('   Success:', completeResult.success);
       console.log('   Transaction Hash:', completeResult.transactionHash || 'N/A');
       console.log('   Message:', completeResult.message);
@@ -398,13 +416,13 @@ export default function MyOrdersPage() {
         throw new Error(completeResult.message || 'Failed to complete transaction on blockchain');
       }
 
-      console.log('✅ Blockchain completion successful!');
+      console.log('Blockchain completion successful!');
       console.log('');
 
       // Update database ONLY after successful blockchain transaction
       if (supabase && completeResult.transactionHash) {
         const completedTimestamp = completeResult.blockchainTimestamp || new Date().toISOString();
-        console.log('📅 Using blockchain completed_at timestamp:', completedTimestamp);
+        console.log('Using blockchain completed_at timestamp:', completedTimestamp);
 
         // Insert NEW transaction record with COMPLETED status
         const { error: txInsertError } = await supabase
@@ -471,8 +489,8 @@ export default function MyOrdersPage() {
       console.log('');
 
       showSuccess(
-        'Transaction Completed', 
-        `The transaction has been marked as complete on the blockchain.\n\n🔗 Transaction: ${completeResult.transactionHash?.substring(0, 10)}...\n\nView on Etherscan: https://sepolia.etherscan.io/tx/${completeResult.transactionHash?.substring(0, 10)}...`
+        'Transaction Completed Successfully!',
+        'Transaction has been marked as complete on the blockchain.'
       );
       
       // Automatically open Etherscan link in new tab
@@ -481,13 +499,13 @@ export default function MyOrdersPage() {
       }, 500);
       
       // Reload orders to reflect changes
-      console.log('🔄 Reloading orders to reflect changes...');
+      console.log('Reloading orders to reflect changes...');
       await loadOrders();
-      console.log('✅ Orders reloaded successfully');
+      console.log('Orders reloaded successfully');
     } catch (error: any) {
       console.error('');
-      console.error('═══════════════════════════════════════════════════════════');
-      console.error('❌ ORDER COMPLETION FAILED');
+      console.error('=============================================================');
+      console.error('ORDER COMPLETION FAILED');
       console.error('═══════════════════════════════════════════════════════════');
       console.error('Error:', error);
       console.error('Error message:', error.message);
@@ -506,15 +524,15 @@ export default function MyOrdersPage() {
       return;
     }
 
-    setProcessingOrderId(order.order_id);
+    setProcessingCancelId(order.order_id);
 
     try {
       console.log('');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('🚫 STARTING ORDER CANCELLATION PROCESS');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📦 Order ID:', order.order_id);
-      console.log('🔗 Transaction ID (Supabase):', order.transaction_id);
+      console.log('=============================================================');
+      console.log('STARTING ORDER CANCELLATION PROCESS');
+      console.log('=============================================================');
+      console.log('Order ID:', order.order_id);
+      console.log('Transaction ID (Supabase):', order.transaction_id);
       console.log('👤 Buyer ID:', user?.id);
       console.log('🏪 Seller ID:', order.seller_id);
       console.log('');
@@ -526,6 +544,7 @@ export default function MyOrdersPage() {
           'Wallet Not Connected',
           'Please connect your MetaMask wallet and try again.'
         );
+        setProcessingCancelId(null);
         return;
       }
       console.log('🔗 Using wallet:', currentWallet);
@@ -535,11 +554,11 @@ export default function MyOrdersPage() {
       const cancellationReason = await showCancellationModal(order);
       if (cancellationReason === null) return;
 
-      console.log('💬 Cancellation Reason:', cancellationReason);
+      console.log('Cancellation Reason:', cancellationReason);
       console.log('');
       
       // Step 1: Call database function to cancel order and create transaction record
-      console.log('📤 Step 1: Calling database function to cancel order...');
+      console.log('Step 1: Calling database function to cancel order...');
       const { data: newTransactionId, error: cancelDbError } = await supabase!.rpc('cancel_order_by_buyer', {
         p_order_id: order.order_id,
         p_cancellation_reason: cancellationReason
@@ -551,14 +570,14 @@ export default function MyOrdersPage() {
         return;
       }
 
-      console.log('✅ Order cancelled in database, transaction ID:', newTransactionId);
+      console.log('Order cancelled in database, transaction ID:', newTransactionId);
 
-      console.log('📊 Transaction data ready for blockchain');
-      console.log('🔗 Cancelling transaction on blockchain (V6.6)...');
-      console.log('💳 MetaMask will open for gas fee payment');
+      console.log('Transaction data ready for blockchain');
+      console.log('Cancelling transaction on blockchain (V6.6)...');
+      console.log('MetaMask will open for gas fee payment');
 
       // Step 2: CANCEL the transaction on blockchain (V6.6 - wallet-agnostic)
-      console.log('🔗 Calling cancelTransactionV5 on blockchain...');
+      console.log('Calling cancelTransactionV5 on blockchain...');
       console.log('   Original transaction_id:', order.transaction_id);
       console.log('   NEW transaction_id:', newTransactionId);
       const cancelResult = await blockchainService.cancelTransactionV5(
@@ -567,23 +586,23 @@ export default function MyOrdersPage() {
         cancellationReason
       );
 
-      console.log('📥 Step 2: Blockchain service response received');
+      console.log('Step 2: Blockchain service response received');
       console.log('   Success:', cancelResult.success);
       console.log('   Transaction Hash:', cancelResult.transactionHash || 'N/A');
       console.log('   Message:', cancelResult.message);
 
       if (!cancelResult.success) {
-        console.error('❌ Blockchain cancellation failed:', cancelResult.message);
+        console.error('Blockchain cancellation failed:', cancelResult.message);
         showError('Blockchain Error', cancelResult.message || 'Failed to cancel order on blockchain');
         return;
       }
 
-      console.log('✅ Blockchain transaction cancelled!');
-      console.log('🔗 Cancel Transaction Hash:', cancelResult.transactionHash);
+      console.log('Blockchain transaction cancelled!');
+      console.log('Cancel Transaction Hash:', cancelResult.transactionHash);
       
       // Use blockchain timestamp if available, otherwise fallback to current time
       const cancelTimestamp = cancelResult.blockchainTimestamp || new Date().toISOString();
-      console.log('📅 Using blockchain cancelled_at timestamp:', cancelTimestamp);
+      console.log('Using blockchain cancelled_at timestamp:', cancelTimestamp);
       
       // Step 3: Update transaction record with REAL blockchain hash from MetaMask
       const { error: updateError } = await supabase!
@@ -598,9 +617,9 @@ export default function MyOrdersPage() {
         .eq('transaction_id', newTransactionId);
 
       if (updateError) {
-        console.error('⚠️ Error updating transaction in DB:', updateError);
+        console.error('Error updating transaction in DB:', updateError);
       } else {
-        console.log('✅ Transaction record updated with blockchain hash');
+        console.log('Transaction record updated with blockchain hash');
       }
 
       // Step 4: Update order_details status (this triggers real-time sync to SellerOrdersPage)
@@ -614,15 +633,15 @@ export default function MyOrdersPage() {
         .eq('order_id', order.order_id);
 
       if (orderUpdateError) {
-        console.error('⚠️ Error updating order status:', orderUpdateError);
+        console.error('Error updating order status:', orderUpdateError);
       } else {
-        console.log('✅ Order status updated to cancelled');
+        console.log('Order status updated to cancelled');
       }
 
-      // ✅ QUANTITY RESTORATION: Restore product quantity on cancellation
+      // QUANTITY RESTORATION: Restore product quantity on cancellation
       if (order.listing_type === 'FOR_SALE' || order.listing_type === 'FOR_RENT') {
         try {
-          console.log('📦 Restoring product quantity after cancellation...');
+          console.log('Restoring product quantity after cancellation...');
           console.log('   Product ID:', order.product_id);
           console.log('   Quantity to restore:', order.buyer_quantity);
 
@@ -634,7 +653,7 @@ export default function MyOrdersPage() {
             .single();
 
           if (fetchError) {
-            console.error('❌ Failed to fetch current product quantity:', fetchError);
+            console.error('Failed to fetch current product quantity:', fetchError);
           } else {
             const restoredQuantity = (currentProduct.quantity ?? 0) + order.buyer_quantity;
             console.log('   Current quantity:', currentProduct.quantity);
@@ -650,36 +669,33 @@ export default function MyOrdersPage() {
               .eq('product_id', order.product_id);
 
             if (quantityError) {
-              console.error('❌ Failed to restore product quantity:', quantityError);
+              console.error('Failed to restore product quantity:', quantityError);
             } else {
-              console.log('✅ Product quantity restored and marked as available');
+              console.log('Product quantity restored and marked as available');
             }
           }
         } catch (quantityRestoreError) {
-          console.error('⚠️ Exception restoring product quantity:', quantityRestoreError);
+          console.error('Exception restoring product quantity:', quantityRestoreError);
         }
       }
 
-      console.log('✅ All updates completed successfully');
-      console.log('🔔 Seller will see status change in real-time on SellerOrdersPage');
+      console.log('All updates completed successfully');
+      console.log('Seller will see status change in real-time on SellerOrdersPage');
 
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('✅ ORDER CANCELLATION SUCCESSFUL');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('🔗 Blockchain TX:', cancelResult.transactionHash);
-      console.log('🌐 View on Etherscan:', `https://sepolia.etherscan.io/tx/${cancelResult.transactionHash}`);
-      console.log('═══════════════════════════════════════════════════════════');
+      console.log('=============================================================');
+      console.log('ORDER CANCELLATION SUCCESSFUL');
+      console.log('=============================================================');
+      console.log('Blockchain TX:', cancelResult.transactionHash);
+      console.log('View on Etherscan:', `https://sepolia.etherscan.io/tx/${cancelResult.transactionHash}`);
+      console.log('=============================================================');
       console.log('');
 
       showSuccess(
-        'Order Cancelled', 
-        `Your order has been cancelled successfully on the blockchain.\n\n🔗 Transaction: ${cancelResult.transactionHash?.substring(0, 10)}...\n\nView on Etherscan: https://sepolia.etherscan.io/tx/${cancelResult.transactionHash?.substring(0, 10)}...`
+        'Order Cancelled Successfully!',
+        'Your order has been cancelled successfully on the blockchain.'
       );
       
       // Automatically open Etherscan link in new tab
-      setTimeout(() => {
-        window.open(`https://sepolia.etherscan.io/tx/${cancelResult.transactionHash}`, '_blank');
-      }, 500);
       
       // Immediately reload orders to get fresh data from database
       console.log('🔄 Reloading orders to reflect changes...');
@@ -687,17 +703,17 @@ export default function MyOrdersPage() {
       console.log('✅ Orders reloaded successfully');
     } catch (error: any) {
       console.error('');
-      console.error('═══════════════════════════════════════════════════════════');
-      console.error('❌ ORDER CANCELLATION FAILED');
-      console.error('═══════════════════════════════════════════════════════════');
+      console.error('=============================================================');
+      console.error('ORDER CANCELLATION FAILED');
+      console.error('=============================================================');
       console.error('Error:', error);
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
-      console.error('═══════════════════════════════════════════════════════════');
+      console.error('=============================================================');
       console.error('');
       showError('Error', error.message || 'Failed to cancel order');
     } finally {
-      setProcessingOrderId(null);
+      setProcessingCancelId(null);
     }
   };
 
@@ -1061,7 +1077,7 @@ export default function MyOrdersPage() {
     const confirmDelete = await showDeleteModal(order);
     if (!confirmDelete) return;
 
-    setProcessingOrderId(order.order_id);
+    setProcessingDeleteId(order.order_id);
 
     try {
       console.log('');
@@ -1080,38 +1096,38 @@ export default function MyOrdersPage() {
 
       // Delete associated transactions first (if any)
       if (order.transaction_id) {
-        console.log('🔄 Step 1: Deleting associated transactions...');
+        console.log('Step 1: Deleting associated transactions...');
         const { error: txDeleteError } = await supabase
           .from('transactions')
           .delete()
           .eq('order_id', order.order_id);
 
         if (txDeleteError) {
-          console.error('❌ Error deleting transactions:', txDeleteError);
+          console.error('Error deleting transactions:', txDeleteError);
           showError('Database Error', 'Failed to delete transaction records: ' + txDeleteError.message);
           return;
         }
-        console.log('✅ Transactions deleted successfully');
+        console.log('Transactions deleted successfully');
       }
 
       // Delete the order
-      console.log('🔄 Step 2: Deleting order from order_details...');
+      console.log('Step 2: Deleting order from order_details...');
       const { error: orderError } = await supabase
         .from('order_details')
         .delete()
         .eq('order_id', order.order_id);
 
       if (orderError) {
-        console.error('❌ Error deleting order:', orderError);
+        console.error('Error deleting order:', orderError);
         showError('Database Error', 'Failed to delete order: ' + orderError.message);
         return;
       }
 
-      console.log('✅ Order deleted successfully');
+      console.log('Order deleted successfully');
       console.log('');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('✅ ORDER DELETION SUCCESSFUL');
-      console.log('═══════════════════════════════════════════════════════════');
+      console.log('=============================================================');
+      console.log('ORDER DELETION SUCCESSFUL');
+      console.log('=============================================================');
       console.log('');
 
       // Remove from local state
@@ -1123,16 +1139,16 @@ export default function MyOrdersPage() {
       );
     } catch (error: any) {
       console.error('');
-      console.error('═══════════════════════════════════════════════════════════');
-      console.error('❌ ORDER DELETION FAILED');
-      console.error('═══════════════════════════════════════════════════════════');
+      console.error('=============================================================');
+      console.error('ORDER DELETION FAILED');
+      console.error('=============================================================');
       console.error('Error:', error);
       console.error('Error message:', error.message);
-      console.error('═══════════════════════════════════════════════════════════');
+      console.error('=============================================================');
       console.error('');
       showError('Error', error.message || 'Failed to delete order');
     } finally {
-      setProcessingOrderId(null);
+      setProcessingDeleteId(null);
     }
   };
 
@@ -1152,156 +1168,201 @@ export default function MyOrdersPage() {
     : orders.filter(order => order.order_status === filter);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#f8f9fa' }}>
-      <div className="container mx-auto px-6 lg:px-12 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2" style={{ color: '#208756' }}>My Orders</h1>
-          <p className="text-base" style={{ color: '#666666' }}>Manage and track your purchases</p>
+    <div className="min-h-screen" style={{ backgroundColor: '#f5f7fa' }}>
+      {/* Simple Header Section */}
+      <div style={{ backgroundColor: '#208756' }} className="text-white py-6 px-6 lg:px-12">
+        <div className="container mx-auto max-w-7xl">
+          <h1 className="text-3xl font-bold" style={{ color: 'white' }}>My Orders</h1>
+          <p className="text-sm mt-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Manage and track your purchases</p>
         </div>
+      </div>
 
+      <div className="container mx-auto px-6 lg:px-12 py-8 max-w-7xl">
         {/* Filter Tabs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden">
-          <div className="flex flex-wrap border-b border-gray-200">
-            {['all', 'pending', 'accepted', 'completed', 'rejected', 'cancelled'].map((tab) => {
-              const count = tab === 'all' ? orders.length : orders.filter(o => o.order_status === tab).length;
-              const isActive = filter === tab;
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setFilter(tab)}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-                    isActive
-                      ? 'border-b-2 text-white'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                  }`}
-                  style={isActive ? { backgroundColor: '#208756', borderColor: '#208756', color: 'white' } : {}}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)} ({count})
-                </button>
-              );
-            })}
-          </div>
+        <div className="mb-8 flex flex-wrap gap-2">
+          {['all', 'pending', 'accepted', 'completed', 'rejected', 'cancelled'].map((tab) => {
+            const count = tab === 'all' ? orders.length : orders.filter(o => o.order_status === tab).length;
+            const isActive = filter === tab;
+            
+            const statusColors: { [key: string]: { bg: string; text: string } } = {
+              'all': { bg: '#208756', text: 'white' },
+              'pending': { bg: '#fef3c7', text: '#92400e' },
+              'accepted': { bg: '#dcfce7', text: '#166534' },
+              'completed': { bg: '#dbeafe', text: '#1e40af' },
+              'rejected': { bg: '#fee2e2', text: '#991b1b' },
+              'cancelled': { bg: '#fed7aa', text: '#9a3412' }
+            };
+            
+            const colors = statusColors[tab];
+            
+            return (
+              <button
+                key={tab}
+                onClick={() => setFilter(tab)}
+                className="px-4 py-2 rounded-lg font-semibold text-sm transition-all"
+                style={{
+                  backgroundColor: isActive ? colors.bg : colors.bg,
+                  color: colors.text,
+                  opacity: isActive ? 1 : 0.7
+                }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)} ({count})
+              </button>
+            );
+          })}
         </div>
 
         {/* Orders List */}
         {filteredOrders.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border-t-4 overflow-hidden" style={{ borderTopColor: '#208756', borderColor: '#e0e0e0' }}>
-            <div className="p-12 text-center">
-              <Package className="w-20 h-20 mx-auto mb-4" style={{ color: '#d4e8e4' }} />
-              <p style={{ color: '#1a1a1a' }} className="mb-2 text-lg font-semibold">No orders found</p>
-              <p style={{ color: '#666666' }} className="mb-6">
-                {filter === 'all' 
-                  ? "You haven't placed any orders yet." 
-                  : `No ${filter} orders at the moment.`}
-              </p>
+          <div className="bg-white rounded-2xl shadow-md border-t-4 overflow-hidden p-12 text-center" style={{ borderTopColor: '#208756' }}>
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-6" style={{ backgroundColor: '#f0f8f6' }}>
+              <Package className="w-10 h-10" style={{ color: '#208756' }} />
+            </div>
+            <h3 className="text-2xl font-bold mb-2" style={{ color: '#1a1a1a' }}>No Orders Yet</h3>
+            <p className="text-gray-600 mb-6 max-w-md mx-auto">
+              {filter === 'all' 
+                ? "You haven't placed any orders yet. Start shopping on CSU Marketplace now!" 
+                : `No ${filter} orders at the moment. Check your other orders or browse products.`}
+            </p>
+            <div className="flex gap-3 justify-center">
               {filter !== 'all' && (
                 <button
                   onClick={() => setFilter('all')}
-                  className="font-medium transition-colors"
-                  style={{ color: '#208756' }}
-                  onMouseOver={(e) => (e.currentTarget.style.color = '#1a6d46')}
-                  onMouseOut={(e) => (e.currentTarget.style.color = '#208756')}
+                  className="px-6 py-2.5 rounded-lg font-semibold transition-all hover:scale-105 text-white"
+                  style={{ backgroundColor: '#208756' }}
                 >
-                  View all orders
+                  View All Orders
                 </button>
               )}
+              <button
+                onClick={() => navigate('/browse')}
+                className="px-6 py-2.5 rounded-lg font-semibold transition-all hover:scale-105 border-2"
+                style={{ borderColor: '#208756', color: '#208756' }}
+              >
+                Browse Products
+              </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {filteredOrders.map((order) => (
-              <div key={order.order_id} className="bg-white rounded-lg shadow-sm overflow-hidden border-t-4 hover:shadow-md transition-shadow" style={{ borderTopColor: '#208756' }}>
-                {/* Order Header - Always Visible */}
+              <div 
+                key={order.order_id} 
+                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border-l-4 group"
+                style={{ borderLeftColor: '#208756' }}
+              >
+                {/* Order Header */}
                 <div 
                   onClick={() => setExpandedOrderId(expandedOrderId === order.order_id ? null : order.order_id)}
-                  className="p-6 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100"
+                  className="p-5 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100 group-hover:bg-gray-50"
                 >
                   <div className="flex items-start justify-between gap-4">
+                    {/* Left Section - Product & Seller Info */}
                     <div className="flex-1 min-w-0 flex items-start gap-4">
-                      {/* Seller Profile Picture */}
-                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {/* Seller Avatar */}
+                      <div className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border-2" style={{ borderColor: '#f0f8f6', backgroundColor: '#f0f8f6' }}>
                         {order.seller_profile_picture ? (
                           <img 
                             src={order.seller_profile_picture} 
                             alt={order.seller_username}
-                            className="w-12 h-12 rounded-full object-cover"
+                            className="w-14 h-14 object-cover"
                           />
                         ) : (
-                          <User className="w-6 h-6 text-gray-400" />
+                          <User className="w-7 h-7 text-gray-400" />
                         )}
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-lg font-bold" style={{ color: '#1a1a1a' }}>{order.product_name}</h3>
-                        </div>
-                        <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
-                          Seller: <span style={{ color: '#1a1a1a', fontWeight: '600' }}>@{order.seller_username}</span>
-                        </p>
-                        <div className="flex flex-wrap gap-3 text-sm" style={{ color: '#666666' }}>
-                          <span className="flex items-center gap-1">
-                            <User className="w-4 h-4" />
-                            {order.seller_first_name} {order.seller_last_name}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {formatDate(order.created_at)}
-                          </span>
-                          <span className="flex items-center gap-1 uppercase font-medium" style={{ color: '#208756' }}>
+                        {/* Product Name & Type */}
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
+                          <h3 className="text-base lg:text-lg font-bold" style={{ color: '#1a1a1a' }}>
+                            {order.product_name}
+                          </h3>
+                          <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold" 
+                            style={{
+                              backgroundColor: order.listing_type === 'FOR_SALE' ? '#dbeafe' : 
+                                              order.listing_type === 'FOR_RENT' ? '#fce7f3' : '#f3e8ff',
+                              color: order.listing_type === 'FOR_SALE' ? '#1e40af' : 
+                                     order.listing_type === 'FOR_RENT' ? '#be185d' : '#7c3aed'
+                            }}>
                             {order.listing_type.replace('_', ' ')}
                           </span>
                         </div>
+
+                        {/* Seller Name */}
+                        <p className="text-sm font-medium mb-2" style={{ color: '#666666' }}>
+                          Seller: <span style={{ color: '#208756', fontWeight: '700' }}>@{order.seller_username}</span>
+                        </p>
+
+                        {/* Meta Info */}
+                        <div className="flex flex-wrap gap-3 text-xs" style={{ color: '#666666' }}>
+                          <span className="flex items-center gap-1">
+                            <User className="w-3.5 h-3.5" />
+                            {order.seller_first_name} {order.seller_last_name}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {formatDate(order.created_at)}
+                          </span>
+                        </div>
+
+                        {/* Blockchain Hash Display */}
                         {order.blockchain_tx_hash && (
-                          <div className="mt-3 flex items-center gap-2">
-                            <div 
-                              className="inline-flex items-center gap-2 text-xs font-mono px-3 py-1 rounded-full cursor-pointer transition-colors"
-                              style={{ 
-                                backgroundColor: order.order_status === 'accepted' ? '#f0fdf4' : order.order_status === 'rejected' ? '#fef2f2' : '#f0f8f6',
-                                color: order.order_status === 'accepted' ? '#10b981' : order.order_status === 'rejected' ? '#ef4444' : '#208756',
-                                border: `1px solid ${order.order_status === 'accepted' ? '#10b981' : order.order_status === 'rejected' ? '#ef4444' : '#208756'}`
-                              }}
+                          <div className="mt-3 flex items-center gap-2 flex-wrap">
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 copyToClipboard(order.blockchain_tx_hash!);
                               }}
+                              className="inline-flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg cursor-pointer transition-all hover:shadow-sm"
+                              style={{ 
+                                backgroundColor: '#f0f8f6',
+                                color: '#208756',
+                                border: '1px solid #d4e8e4'
+                              }}
                             >
                               {copiedHash === order.blockchain_tx_hash ? (
-                                <Check className="w-3 h-3" />
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  Copied!
+                                </>
                               ) : (
-                                <Copy className="w-3 h-3" />
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  {order.blockchain_tx_hash.substring(0, 12)}...
+                                </>
                               )}
-                              {order.blockchain_tx_hash.substring(0, 10)}...
-                            </div>
+                            </button>
                             <a
                               href={`https://sepolia.etherscan.io/tx/${order.blockchain_tx_hash}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="text-xs inline-flex items-center gap-1 transition-colors font-medium"
+                              className="inline-flex items-center gap-1 text-xs font-semibold transition-colors hover:scale-105"
                               style={{ color: '#208756' }}
-                              onMouseOver={(e) => (e.currentTarget.style.color = '#1a6d46')}
-                              onMouseOut={(e) => (e.currentTarget.style.color = '#208756')}
                             >
-                              View <ExternalLink className="w-3 h-3" />
+                              View on Etherscan
+                              <ExternalLink className="w-3 h-3" />
                             </a>
-                          </div>
-                        )}
-                        {!order.blockchain_tx_hash && (
-                          <div className="mt-3 text-xs" style={{ color: '#999999' }}>
-                            Blockchain transaction pending
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="text-right whitespace-nowrap flex flex-col items-end gap-2">
-                      <p className="text-2xl font-bold" style={{ color: '#208756' }}>{formatPrice(order.price * order.buyer_quantity)}</p>
-                      <p className="text-sm" style={{ color: '#666666' }}>{formatPrice(order.price)} × {order.buyer_quantity}</p>
+                    {/* Right Section - Price & Status */}
+                    <div className="text-right whitespace-nowrap flex flex-col items-end gap-3">
+                      <div>
+                        <p className="text-xl lg:text-2xl font-bold" style={{ color: '#208756' }}>
+                          {formatPrice(order.price * order.buyer_quantity)}
+                        </p>
+                        <p className="text-xs" style={{ color: '#666666' }}>
+                          {formatPrice(order.price)} × {order.buyer_quantity}
+                        </p>
+                      </div>
                       
-                      {/* Status Badges Container */}
-                      <div className="flex flex-col items-end gap-1.5">
-                        <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full ${
+                      {/* Status & Review Badges */}
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`inline-block px-4 py-1.5 text-xs font-bold rounded-full transition-all ${
                           order.order_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                           order.order_status === 'accepted' ? 'bg-green-100 text-green-800' :
                           order.order_status === 'rejected' ? 'bg-red-100 text-red-800' :
@@ -1311,13 +1372,12 @@ export default function MyOrdersPage() {
                         }`}>
                           {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
                         </span>
-                        
-                        {/* Review Status Badge - Only for completed orders */}
+
                         {order.order_status === 'completed' && order.has_reviewed && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full" style={{
-                            background: 'linear-gradient(135deg, #f3e8ff 0%, #fce7f3 100%)',
-                            color: '#7c3aed',
-                            border: '1.5px solid #a78bfa'
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full" style={{
+                            backgroundColor: '#fce7f3',
+                            color: '#be185d',
+                            border: '1px solid #fbcfe8'
                           }}>
                             <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
                               <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
@@ -1328,9 +1388,9 @@ export default function MyOrdersPage() {
                       </div>
                       
                       {expandedOrderId === order.order_id ? (
-                        <ChevronUp className="w-5 h-5" style={{ color: '#666666' }} />
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
                       ) : (
-                        <ChevronDown className="w-5 h-5" style={{ color: '#666666' }} />
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
                       )}
                     </div>
                   </div>
@@ -1622,7 +1682,7 @@ export default function MyOrdersPage() {
                             <div className="space-y-3 text-sm">
                               {order.service_schedule && (
                                 <div>
-                                  <span style={{ color: '#666666', fontWeight: '600' }}>Service Schedule (Buyer): </span>
+                                  <span style={{ color: '#666666', fontWeight: '600' }}>Preferred Date (Buyer): </span>
                                   <span style={{ color: '#1a1a1a', fontWeight: '600' }}>{order.service_schedule}</span>
                                 </div>
                               )}
@@ -1648,17 +1708,11 @@ export default function MyOrdersPage() {
                     {order.blockchain_tx_hash && (
                       <div className="rounded-lg p-5 border-2" style={{ 
                         backgroundColor: '#ffffff', 
-                        borderColor: order.order_status === 'accepted' ? '#208756' : 
-                                    order.order_status === 'rejected' ? '#dc2626' : 
-                                    order.order_status === 'completed' ? '#208756' : 
-                                    order.order_status === 'cancelled' ? '#f59e0b' : '#208756'
+                        borderColor: getStatusColor(order.order_status)
                       }}>
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-sm font-bold flex items-center gap-2" style={{ 
-                            color: order.order_status === 'accepted' ? '#208756' : 
-                                  order.order_status === 'rejected' ? '#dc2626' : 
-                                  order.order_status === 'completed' ? '#208756' : 
-                                  order.order_status === 'cancelled' ? '#f59e0b' : '#208756'
+                            color: getStatusColor(order.order_status)
                           }}>
                             <span>
                               {order.order_status === 'accepted' && 'Order Accepted on Blockchain'}
@@ -1674,10 +1728,7 @@ export default function MyOrdersPage() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold text-xs transition-all"
                             style={{ 
-                              backgroundColor: order.order_status === 'accepted' ? '#208756' : 
-                                              order.order_status === 'rejected' ? '#dc2626' : 
-                                              order.order_status === 'completed' ? '#208756' : 
-                                              order.order_status === 'cancelled' ? '#f59e0b' : '#208756',
+                              backgroundColor: getStatusColor(order.order_status),
                               color: 'white'
                             }}
                             onMouseOver={(e) => {
@@ -1701,8 +1752,8 @@ export default function MyOrdersPage() {
                               className="inline-flex items-center gap-2 text-xs font-mono px-3 py-1 rounded-full transition-colors"
                               style={{
                                 backgroundColor: '#f8f9fa',
-                                color: '#208756',
-                                border: '1px solid #d4e8e4'
+                                color: getStatusColor(order.order_status),
+                                border: `1px solid ${getStatusColor(order.order_status)}`
                               }}
                             >
                               {copiedHash === order.blockchain_tx_hash ? (
@@ -1722,23 +1773,14 @@ export default function MyOrdersPage() {
                             {order.blockchain_tx_hash}
                           </code>
                           <div style={{ 
-                            backgroundColor: order.order_status === 'accepted' ? '#f0f8f6' : 
-                                            order.order_status === 'rejected' ? '#fef2f2' : 
-                                            order.order_status === 'completed' ? '#f0f8f6' : 
-                                            order.order_status === 'cancelled' ? '#fef9e7' : '#f0f8f6', 
+                            backgroundColor: getStatusColor(order.order_status) + '15',
                             borderRadius: '6px', 
                             padding: '12px', 
                             marginTop: '8px',
-                            border: `1px solid ${order.order_status === 'accepted' ? '#208756' : 
-                                                  order.order_status === 'rejected' ? '#dc2626' : 
-                                                  order.order_status === 'completed' ? '#208756' : 
-                                                  order.order_status === 'cancelled' ? '#f59e0b' : '#208756'}`
+                            border: `1px solid ${getStatusColor(order.order_status)}`
                           }}>
                             <p style={{ 
-                              color: order.order_status === 'accepted' ? '#208756' : 
-                                    order.order_status === 'rejected' ? '#dc2626' : 
-                                    order.order_status === 'completed' ? '#208756' : 
-                                    order.order_status === 'cancelled' ? '#f59e0b' : '#208756', 
+                              color: getStatusColor(order.order_status),
                               fontSize: '13px', 
                               margin: 0,
                               fontWeight: '600'
@@ -1776,26 +1818,26 @@ export default function MyOrdersPage() {
                       {order.transaction_id && (order.order_status === 'pending' || order.order_status === 'accepted') && (
                         <button
                           onClick={() => handleCancelOrder(order)}
-                          disabled={processingOrderId === order.order_id}
+                          disabled={processingCancelId === order.order_id}
                           className="flex-1 px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 border-2"
                           style={{
-                            backgroundColor: processingOrderId === order.order_id ? '#9ca3af' : 'white',
-                            color: processingOrderId === order.order_id ? 'white' : '#dc2626',
+                            backgroundColor: processingCancelId === order.order_id ? '#9ca3af' : 'white',
+                            color: processingCancelId === order.order_id ? '#9ca3af' : '#ef4444',
                             fontSize: '14px',
-                            borderColor: processingOrderId === order.order_id ? '#9ca3af' : '#dc2626'
+                            borderColor: processingCancelId === order.order_id ? '#9ca3af' : '#ef4444'
                           }}
                           onMouseOver={(e) => {
-                            if (processingOrderId !== order.order_id) {
-                              e.currentTarget.style.backgroundColor = '#fee2e2';
+                            if (processingCancelId !== order.order_id) {
+                              e.currentTarget.style.backgroundColor = '#ef4444' + '15';
                             }
                           }}
                           onMouseOut={(e) => {
-                            e.currentTarget.style.backgroundColor = processingOrderId === order.order_id ? '#9ca3af' : 'white';
+                            e.currentTarget.style.backgroundColor = processingCancelId === order.order_id ? '#9ca3af' : 'white';
                           }}
                         >
-                          {processingOrderId === order.order_id ? (
+                          {processingCancelId === order.order_id ? (
                             <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2" style={{ borderColor: '#ef4444', borderTopColor: 'transparent' }}></div>
                               Cancelling...
                             </>
                           ) : (
@@ -1877,26 +1919,26 @@ export default function MyOrdersPage() {
                       {/* Delete Button - Always available */}
                       <button
                         onClick={() => handleDeleteOrder(order)}
-                        disabled={processingOrderId === order.order_id}
+                        disabled={processingDeleteId === order.order_id}
                         className="flex-1 px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 border-2"
                         style={{
-                          backgroundColor: processingOrderId === order.order_id ? '#9ca3af' : 'white',
-                          color: processingOrderId === order.order_id ? 'white' : '#666666',
+                          backgroundColor: processingDeleteId === order.order_id ? '#9ca3af' : 'white',
+                          color: processingDeleteId === order.order_id ? 'white' : '#666666',
                           fontSize: '14px',
-                          borderColor: processingOrderId === order.order_id ? '#9ca3af' : '#e0e0e0'
+                          borderColor: processingDeleteId === order.order_id ? '#9ca3af' : '#e0e0e0'
                         }}
                         onMouseOver={(e) => {
-                          if (processingOrderId !== order.order_id) {
+                          if (processingDeleteId !== order.order_id) {
                             e.currentTarget.style.backgroundColor = '#f8f9fa';
                             e.currentTarget.style.borderColor = '#666666';
                           }
                         }}
                         onMouseOut={(e) => {
-                          e.currentTarget.style.backgroundColor = processingOrderId === order.order_id ? '#9ca3af' : 'white';
-                          e.currentTarget.style.borderColor = processingOrderId === order.order_id ? '#9ca3af' : '#e0e0e0';
+                          e.currentTarget.style.backgroundColor = processingDeleteId === order.order_id ? '#9ca3af' : 'white';
+                          e.currentTarget.style.borderColor = processingDeleteId === order.order_id ? '#9ca3af' : '#e0e0e0';
                         }}
                       >
-                        {processingOrderId === order.order_id ? (
+                        {processingDeleteId === order.order_id ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
                             Deleting...
@@ -1916,6 +1958,7 @@ export default function MyOrdersPage() {
           </div>
         )}
       </div>
+      <Footer />
     </div>
   );
 }

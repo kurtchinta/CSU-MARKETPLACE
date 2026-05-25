@@ -4,6 +4,7 @@ import { useModal } from '../context/ModalContext';
 import { useWallet } from '../hooks/useWallet';
 import { uploadProfilePicture } from '../services/profilePictureService';
 import { supabase } from '../lib/supabase';
+import Footer from '../components/Footer';
 
 interface ProfileData {
   email: string;
@@ -53,6 +54,15 @@ const ProfilePage: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewImage, setPreviewImage] = useState<string>('');
 
+  // Statistics state
+  const [statistics, setStatistics] = useState({
+    productsPosted: 0,
+    productsSold: 0,
+    ordersAsBuyer: 0,
+    ordersAsSeller: 0,
+    totalRevenue: 0
+  });
+
   // Load profile data
   useEffect(() => {
     if (profile) {
@@ -73,6 +83,95 @@ const ProfilePage: React.FC = () => {
       setPreviewImage(profile.profile_picture_url || '');
     }
   }, [profile, user?.id]);
+
+  // Fetch statistics
+  const fetchStatistics = async () => {
+    if (!user?.id || !supabase) {
+      console.log('⚠️ User or supabase not available');
+      return;
+    }
+
+    try {
+      console.log('📊 Fetching statistics for user:', user.id);
+
+      // Fetch products posted (APPROVED only)
+      const { data: productsData } = await supabase
+        .from('products')
+        .select('product_id')
+        .eq('user_id', user.id)
+        .eq('status', 'APPROVED');
+      const productsPosted = productsData?.length || 0;
+
+      // Fetch products sold (COMPLETED transactions as seller)
+      const { data: soldData } = await supabase
+        .from('transactions')
+        .select('product_id')
+        .eq('seller_id', user.id)
+        .eq('transaction_status', 'COMPLETED');
+      const productsSold = soldData?.length || 0;
+
+      // Fetch orders as buyer (COMPLETED transactions as buyer)
+      const { data: buyerOrdersData } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('buyer_id', user.id)
+        .eq('transaction_status', 'COMPLETED');
+      const ordersAsBuyer = buyerOrdersData?.length || 0;
+
+      // Fetch orders as seller (COMPLETED transactions as seller)
+      const { data: sellerOrdersData } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('seller_id', user.id)
+        .eq('transaction_status', 'COMPLETED');
+      const ordersAsSeller = sellerOrdersData?.length || 0;
+
+      // Fetch total revenue (sum of product prices for COMPLETED sales)
+      const { data: revenueData } = await supabase
+        .from('transactions')
+        .select('product_id')
+        .eq('seller_id', user.id)
+        .eq('transaction_status', 'COMPLETED');
+
+      let totalRevenue = 0;
+      if (revenueData && revenueData.length > 0) {
+        const productIds = revenueData.map((tx: any) => tx.product_id);
+        const { data: pricesData } = await supabase
+          .from('products')
+          .select('price')
+          .in('product_id', productIds);
+        
+        if (pricesData) {
+          totalRevenue = pricesData.reduce((sum: number, p: any) => sum + (p.price || 0), 0);
+        }
+      }
+
+      console.log('✅ Statistics fetched:', {
+        productsPosted,
+        productsSold,
+        ordersAsBuyer,
+        ordersAsSeller,
+        totalRevenue
+      });
+
+      setStatistics({
+        productsPosted,
+        productsSold,
+        ordersAsBuyer,
+        ordersAsSeller,
+        totalRevenue
+      });
+    } catch (error) {
+      console.error('❌ Error fetching statistics:', error);
+    }
+  };
+
+  // Load statistics when user changes
+  useEffect(() => {
+    if (user?.id) {
+      fetchStatistics();
+    }
+  }, [user?.id]);
 
   // Handle input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -302,23 +401,36 @@ const ProfilePage: React.FC = () => {
     setUploadingPicture(true);
 
     try {
+      // Create preview immediately
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewImage(reader.result as string);
+      reader.onload = () => {
+        const previewUrl = reader.result as string;
+        setPreviewImage(previewUrl);
       };
       reader.readAsDataURL(file);
 
+      // Upload to server
       const url = await uploadProfilePicture(user.id, file);
       
+      // Update state with the actual uploaded URL
       setProfileData(prev => ({
         ...prev,
         profile_picture_url: url
       }));
 
+      // Set preview to the uploaded URL (not data URL)
+      setPreviewImage(url);
+
       showSuccess('Success', 'Profile picture uploaded successfully!');
+      
+      // Clear the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     } catch (error: any) {
       console.error('❌ Error uploading profile picture:', error);
       showError('Upload Failed', error.message || 'Failed to upload profile picture');
+      // Reset preview on error
       setPreviewImage(profileData.profile_picture_url || '');
     } finally {
       setUploadingPicture(false);
@@ -405,9 +517,9 @@ const ProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="container mx-auto px-4">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      <div className="flex-1 py-8">
+        <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 px-6">
           {/* Left Sidebar - Profile Card */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow p-6 text-center">
@@ -487,24 +599,6 @@ const ProfilePage: React.FC = () => {
                 <span className="font-semibold">Member Since:</span>{' '}
                 {profile.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}
               </p>
-
-              {/* Logout Button */}
-              <button
-                onClick={() => {
-                  if (window.confirm('Are you sure you want to logout?')) {
-                    window.location.href = '/';
-                  }
-                }}
-                className="w-full text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-                style={{ backgroundColor: '#208756' }}
-                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#1a6d46')}
-                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#208756')}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                Logout
-              </button>
             </div>
 
             {/* Statistics Card */}
@@ -514,34 +608,34 @@ const ProfilePage: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Products Posted</span>
-                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{profile.total_products_posted || 0}</span>
+                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{statistics.productsPosted}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Products Sold</span>
-                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{profile.total_products_sold || 0}</span>
+                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{statistics.productsSold}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Orders as Buyer</span>
-                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{profile.total_orders_as_buyer || 0}</span>
+                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{statistics.ordersAsBuyer}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Orders as Seller</span>
-                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{profile.total_orders_as_seller || 0}</span>
+                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{statistics.ordersAsSeller}</span>
                 </div>
                 <div className="flex justify-between items-center pt-3 border-t border-gray-200">
                   <span className="text-sm text-gray-600">Total Revenue</span>
-                  <span className="text-lg font-bold" style={{ color: '#208756' }}>₱{(profile.total_revenue || 0).toFixed(2)}</span>
+                  <span className="text-lg font-bold" style={{ color: '#208756' }}>₱{(statistics.totalRevenue).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Seller Rating</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-lg font-bold" style={{ color: '#208756' }}>{(profile.average_seller_rating || 0).toFixed(1)}</span>
-                    {renderStars(profile.average_seller_rating || 0, 'sm')}
+                    <span className="text-lg font-bold" style={{ color: '#208756' }}>{(profile?.average_seller_rating || 0).toFixed(1)}</span>
+                    {renderStars(profile?.average_seller_rating || 0, 'sm')}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Reviews Received</span>
-                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{profile.total_reviews_received || 0}</span>
+                  <span className="text-lg font-bold" style={{ color: '#208756' }}>{profile?.total_reviews_received || 0}</span>
                 </div>
               </div>
             </div>
@@ -566,10 +660,8 @@ const ProfilePage: React.FC = () => {
                   {!isEditing && (
                     <button
                       onClick={() => setIsEditing(true)}
-                      className="text-white font-semibold py-2 px-6 rounded-lg transition-all duration-300 border-2"
-                      style={{ backgroundColor: 'transparent', color: '#208756', borderColor: '#208756' }}
-                      onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#208756'; e.currentTarget.style.color = 'white'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#208756'; }}
+                      className="text-white font-semibold py-2 px-6 rounded-lg"
+                      style={{ backgroundColor: '#208756', color: 'white' }}
                     >
                       Edit Profile
                     </button>
@@ -845,6 +937,7 @@ const ProfilePage: React.FC = () => {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   );
 };

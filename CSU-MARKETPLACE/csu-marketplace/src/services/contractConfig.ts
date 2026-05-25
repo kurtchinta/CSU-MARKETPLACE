@@ -2,8 +2,8 @@
 // ABI aligned with CSUMarketplace.json (v5.0.0 deployed to Sepolia Nov 12, 2025)
 // ✅ String-based types: "FOR_SALE", "FOR_RENT", "SERVICE", "PENDING", "ACCEPTED", etc.
 export const CONTRACT_CONFIG = {
-  // Deployed contract address on Sepolia (Updated: Nov 16, 2025 - v6.0.0 Verified)
-  CSU_MARKETPLACE_ADDRESS: import.meta.env.VITE_CONTRACT_ADDRESS || "0x742e1FE604CAD88CB58A67BA23e407c6A15bAFa6",
+  // Deployed contract address on Sepolia (Updated: Nov 26, 2025 - v6.6 Refactored - PII Removed)
+  CSU_MARKETPLACE_ADDRESS: import.meta.env.VITE_CONTRACT_ADDRESS || "0x7597d6fe0329aF3DD4b47E7874f1745ADa9C9AaE",
   
   // Network configuration
   SEPOLIA_CHAIN_ID: 11155111,

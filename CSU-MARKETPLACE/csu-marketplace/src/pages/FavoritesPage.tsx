@@ -5,6 +5,8 @@ import { useCart } from '../context/CartContext';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router';
 import ImageCarousel from '../components/ImageCarousel';
+import { Users, MapPin, Phone, Loader } from 'lucide-react';
+import Footer from '../components/Footer';
 
 
 interface FavoriteItem {
@@ -341,21 +343,21 @@ const FavoritesPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-8 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f8f9fa' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 mx-auto mb-4" style={{ borderColor: '#208756' }}></div>
-          <p className="text-lg text-gray-700 font-medium">Loading your favorites...</p>
+          <Loader className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: '#208756' }} />
+          <p style={{ color: '#666666' }}>Loading your favorites...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <div className="container mx-auto px-4 max-w-7xl">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2" style={{ color: '#208756' }}>My Favorites</h1>
+          <h1 className="text-4xl font-bold mb-2 mt-6" style={{ color: '#208756' }}>My Favorites</h1>
           <p className="text-gray-500 text-lg">
             {favorites.length === 0 
               ? 'Start saving items you love' 
@@ -396,7 +398,7 @@ const FavoritesPage: React.FC = () => {
               <div 
                 key={favorite.favorite_id}
                 onClick={() => navigate(`/product/${favorite.product_id}`)}
-                className="bg-white rounded-xl overflow-hidden hover:shadow-xl transition-all duration-300 cursor-pointer border border-gray-100 group"
+                className="bg-white rounded-lg overflow-hidden hover:shadow-lg transition-all cursor-pointer border-2 border-gray-200 hover:border-[#208756]"
               >
                 {/* Product Image */}
                 <div className="relative w-full" style={{ paddingBottom: '100%' }}>
@@ -407,17 +409,13 @@ const FavoritesPage: React.FC = () => {
                       className="h-full w-full"
                     />
                   </div>
-                  
-                  {/* Listing Type Badge */}
-                  <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold text-white ${
-                    favorite.product?.listing_type === 'FOR_SALE' 
-                      ? 'bg-green-600' 
-                      : favorite.product?.listing_type === 'FOR_RENT'
-                      ? 'bg-blue-500'
-                      : 'bg-purple-600'
-                  }`}>
-                    {favorite.product?.listing_type === 'FOR_SALE' ? 'FOR SALE' : favorite.product?.listing_type === 'FOR_RENT' ? 'FOR RENT' : 'SERVICE'}
-                  </div>
+
+                  {/* Image Counter - Top Right */}
+                  {favorite.product?.images && favorite.product.images.length > 1 && (
+                    <div className="absolute top-3 right-3 bg-green-600 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center space-x-1 border border-green-400 border-opacity-50">
+                      <span className="text-xs font-bold text-white">+{favorite.product.images.length - 1}</span>
+                    </div>
+                  )}
 
                   {/* Sold Out Badge */}
                   {favorite.product?.quantity === 0 && favorite.product?.listing_type === 'FOR_SALE' && (
@@ -443,124 +441,160 @@ const FavoritesPage: React.FC = () => {
                 </div>
 
                 {/* Product Info */}
-                <div className="p-4 mt-4">
+                <div className="p-3">
                   {/* Product Name */}
-                  <h3 className="text-base font-semibold text-gray-900 line-clamp-2 min-h-[3rem] group-hover:text-green-700 transition-colors">
+                  <h3 className="text-sm mt-5 font-medium text-gray-900 line-clamp-2 mb-1" style={{ minHeight: '40px' }}>
                     {favorite.product?.product_name}
                   </h3>
 
-                  {/* Price */}
-                  <div className="mb-3">
-                    <p className="text-2xl font-bold" style={{ color: '#208756' }}>
+                  {/* Product Description */}
+                  <p className="text-xs text-gray-500 line-clamp-1 mb-2">
+                    {favorite.product?.description}
+                  </p>
+
+                  {/* Price & Listing Type Badge */}
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-lg font-bold" style={{ color: '#208756' }}>
                       {formatPrice(favorite.product?.price || 0)}
                     </p>
+                    <div className={`px-2.5 py-1 rounded-full text-xs font-semibold text-white ${
+                      favorite.product?.listing_type === 'FOR_SALE' 
+                        ? 'bg-[#208756]' 
+                        : favorite.product?.listing_type === 'FOR_RENT'
+                        ? 'bg-blue-600'
+                        : 'bg-purple-600'
+                    }`}>
+                      {favorite.product?.listing_type === 'FOR_SALE' ? 'For Sale' : favorite.product?.listing_type === 'FOR_RENT' ? 'For Rent' : 'Service'}
+                    </div>
                   </div>
 
                   {/* Seller Info */}
-                  <div className="pb-3 mb-3 border-b border-gray-100">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                    <div className="flex-shrink-0">
                       {favorite.product?.seller?.profile_picture_url ? (
                         <img
                           src={favorite.product.seller.profile_picture_url}
                           alt={favorite.product.seller.username}
-                          className="w-8 h-8 rounded-full object-cover"
+                          className="w-8 h-8 rounded-full object-cover border-2 border-[#208756]"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f0f8f5' }}>
-                          <svg className="w-4 h-4" style={{ color: '#208756' }} fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                          </svg>
+                        <div className="w-8 h-8 bg-gradient-to-br from-[#208756] to-[#1a6d45] rounded-full flex items-center justify-center">
+                          <Users className="w-4 h-4 text-white" />
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-900 truncate font-medium">
-                          {favorite.product?.seller?.username || 'Unknown'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-900 truncate">
+                        {favorite.product?.seller?.first_name} {favorite.product?.seller?.last_name}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {favorite.product?.seller?.phone_number && (
+                          <Phone className="w-3 h-3 text-gray-400" />
+                        )}
+                        <p className="text-xs text-gray-500 truncate">
+                          {favorite.product?.seller?.phone_number || favorite.product?.seller?.username}
                         </p>
-                        {/* Seller Rating */}
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <svg className="w-3.5 h-3.5 text-yellow-400 fill-current" viewBox="0 0 20 20">
-                            <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                          </svg>
-                          {(favorite.product?.seller?.average_seller_rating ?? 0) > 0 && (favorite.product?.seller?.total_reviews_received ?? 0) > 0 ? (
-                            <span className="text-xs text-gray-600">
-                              {(favorite.product?.seller?.average_seller_rating || 0).toFixed(1)} ({favorite.product?.seller?.total_reviews_received || 0})
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">No ratings ({favorite.product?.seller?.total_reviews_received || 0})</span>
-                          )}
-                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Product Stats */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-1">
-                      <svg className="w-3.5 h-3.5 text-yellow-400 fill-current" viewBox="0 0 20 20">
-                        <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                      </svg>
-                      {favorite.product && productRatings[favorite.product.product_id] && productRatings[favorite.product.product_id].count > 0 ? (
-                        <span className="text-xs text-gray-600">
-                          {productRatings[favorite.product.product_id].avgRating.toFixed(1)} ({productRatings[favorite.product.product_id].count})
+                  {/* Seller Rating */}
+                  <div className="flex items-center space-x-1 mt-3 mb-2">
+                    <svg className="w-3 h-3 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                      <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                    </svg>
+                    {(favorite.product?.seller?.average_seller_rating ?? 0) > 0 && (favorite.product?.seller?.total_reviews_received ?? 0) > 0 ? (
+                      <>
+                        <span className="text-xs font-medium text-gray-700">
+                          {(favorite.product?.seller?.average_seller_rating || 0).toFixed(1)}
                         </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">No Reviews ({favorite.product && productRatings[favorite.product.product_id]?.count || 0})</span>
-                      )}
-                    </div>
-                    {(favorite.product?.sold_count ?? 0) > 0 && (
-                      <span className="text-xs font-medium" style={{ color: '#208756' }}>
-                        {favorite.product?.sold_count} sold
-                      </span>
+                        <span className="text-xs text-gray-400">
+                          ({favorite.product?.seller?.total_reviews_received || 0})
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-gray-400">No ratings ({favorite.product?.seller?.total_reviews_received || 0})</span>
                     )}
                   </div>
 
-                  {/* Location & Details */}
-                  {favorite.product?.listing_type === 'FOR_SALE' && favorite.product.pickup_location && (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-3">
-                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  {/* Product Rating */}
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                    <div className="flex items-center space-x-1">
+                      <svg className="w-3 h-3 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                        <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
                       </svg>
-                      <p className="truncate">{favorite.product.pickup_location}</p>
+                      {favorite.product && productRatings[favorite.product.product_id] && productRatings[favorite.product.product_id].count > 0 && productRatings[favorite.product.product_id].avgRating > 0 ? (
+                        <>
+                          <span className="font-medium text-gray-900">{productRatings[favorite.product.product_id].avgRating.toFixed(1)}</span>
+                          <span className="text-gray-500">({productRatings[favorite.product.product_id].count})</span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400">No Reviews ({favorite.product && productRatings[favorite.product.product_id]?.count || 0})</span>
+                      )}
+                    </div>
+                    {/* Sold Count Badge */}
+                    {(favorite.product?.sold_count ?? 0) > 0 && (
+                      <div className="flex items-center space-x-1">
+                        <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
+                        </svg>
+                        <span className="font-medium text-green-600">{favorite.product?.sold_count} sold</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Location Info - Only for FOR_SALE */}
+                  {favorite.product?.listing_type === 'FOR_SALE' && (
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                      <div className="flex items-center space-x-1 flex-1 min-w-0">
+                        <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0" />
+                        <p className="truncate">{favorite.product.pickup_location || 'N/A'}</p>
+                      </div>
+                      <div className="flex-shrink-0 ml-2">
+                        <span className="text-green-600 font-bold">{favorite.product.sold_count || 0}</span> sold
+                      </div>
                     </div>
                   )}
 
+                  {/* Quantity Available - Only for FOR_SALE */}
+                  {favorite.product?.listing_type === 'FOR_SALE' && (
+                    <div className="text-xs text-gray-500 mb-2">
+                      Quantity Available: {favorite.product.quantity || 0}
+                    </div>
+                  )}
+
+                  {/* Pickup Location for FOR_RENT */}
                   {favorite.product?.listing_type === 'FOR_RENT' && (
-                    <div className="space-y-2 mb-3">
-                      {favorite.product.pickup_location && (
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <p className="truncate">{favorite.product.pickup_location}</p>
-                        </div>
-                      )}
-                      {favorite.product.rent_duration && (
-                        <p className="text-xs text-gray-500">Duration: {favorite.product.rent_duration}</p>
-                      )}
+                    <div className="flex items-center space-x-1 text-xs text-gray-500 mb-2">
+                      <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0" />
+                      <p className="truncate">{favorite.product.pickup_location || 'N/A'}</p>
                     </div>
                   )}
 
+                  {/* Rental Duration for FOR_RENT */}
+                  {favorite.product?.listing_type === 'FOR_RENT' && (
+                    <div className="text-xs text-gray-500 mb-2">
+                      Rent Duration: {favorite.product.rent_duration || 'N/A'}
+                    </div>
+                  )}
+
+                  {/* Meetup Location for SERVICE */}
                   {favorite.product?.listing_type === 'SERVICE' && (
-                    <div className="space-y-2 mb-3">
-                      {favorite.product.meetup_location && (
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <p className="truncate">{favorite.product.meetup_location}</p>
-                        </div>
-                      )}
-                      {favorite.product.service_schedule && (
-                        <p className="text-xs text-gray-500">Schedule: {favorite.product.service_schedule}</p>
-                      )}
+                    <div className="flex items-center space-x-1 text-xs text-gray-500 mb-2">
+                      <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0" />
+                      <p className="truncate">{favorite.product.meetup_location || 'N/A'}</p>
+                    </div>
+                  )}
+
+                  {/* Service Schedule for SERVICE */}
+                  {favorite.product?.listing_type === 'SERVICE' && (
+                    <div className="text-xs text-gray-500 mb-2">
+                      Schedule: {favorite.product.service_schedule || 'N/A'}
                     </div>
                   )}
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2 pt-3 border-t border-gray-100">
+                  <div className="flex gap-2 pt-3 border-t border-gray-100 mt-3">
                     <button
                       onClick={(e) => handleAddToCart(e, favorite.product)}
                       className="flex-1 py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5"
@@ -605,6 +639,7 @@ const FavoritesPage: React.FC = () => {
           </div>
         )}
       </div>
+      <Footer />
     </div>
   );
 };

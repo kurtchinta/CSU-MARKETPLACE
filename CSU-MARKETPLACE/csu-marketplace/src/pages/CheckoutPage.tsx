@@ -3,11 +3,12 @@ import { useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useModal } from '../context/ModalContext';
+import { useDirectCheckout } from '../context/DirectCheckoutContext';
 import { supabase } from '../lib/supabase';
 import { storageService } from '../services/storageService';
 import blockchainService from '../services/blockchainService';
 import { ethers } from 'ethers';
-import { ArrowLeft, X, Phone, MapPin, Calendar, Clock, MessageSquare, Star, Package, CheckCircle } from 'lucide-react';
+import { ArrowLeft, X, Phone, MapPin, Calendar, Clock, MessageSquare, Star, Package, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 import ImageCarousel from '../components/ImageCarousel';
 
 interface CheckoutItem {
@@ -69,8 +70,35 @@ const CheckoutPage: React.FC = () => {
   const { user, profile } = useAuth();
   const { refreshCart } = useCart();
   const { showSuccess, showError } = useModal();
+  const { checkoutData, clearDirectCheckout } = useDirectCheckout();
 
-  const { items: checkoutItems = [], isDirectCheckout = false } = location.state || { items: [], isDirectCheckout: false };
+  // Get items from either location.state (ProductDetails) or DirectCheckoutContext (SellerProfilePage, BrowsePage)
+  const { items: locationItems = [], isDirectCheckout: locationIsDirectCheckout = false } = location.state || { items: [], isDirectCheckout: false };
+  
+  // Merge DirectCheckoutContext data with location.state data
+  const checkoutItems = checkoutData?.items?.map(item => ({
+    cart_id: 0,
+    product_id: item.product_id,
+    quantity: item.quantity,
+    product: {
+      product_id: item.product_id,
+      product_name: item.product_name,
+      description: item.description,
+      price: item.price,
+      listing_type: item.listing_type.toUpperCase(),
+      user_id: item.user_id,
+      category_id: item.category_id,
+      pickup_location: item.pickup_location,
+      meetup_location: item.meetup_location,
+      images: item.images?.map((path, index) => ({
+        image_id: index,
+        storage_path: path,
+        image_order: index
+      })) || []
+    }
+  })) || locationItems;
+  
+  const isDirectCheckout = checkoutData?.isDirectCheckout || locationIsDirectCheckout;
 
   const [items, setItems] = useState<CheckoutItem[]>(checkoutItems);
   const [sellerInfoMap, setSellerInfoMap] = useState<{ [key: string]: SellerInfo }>({});
@@ -101,6 +129,9 @@ const CheckoutPage: React.FC = () => {
     serviceSchedule: ''
   });
 
+  const [allowNavigation, setAllowNavigation] = useState(false);
+  const [pendingNavigationPath, setPendingNavigationPath] = useState<string | null>(null);
+
   useEffect(() => {
     if (!checkoutItems || checkoutItems.length === 0) {
       showError('No Items', 'No items to checkout. Please add items to your cart first.');
@@ -114,16 +145,54 @@ const CheckoutPage: React.FC = () => {
     loadSpecifications();
     loadProductAvailability();
 
+    // Protect checkout page - block all navigation attempts
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
+      if (!allowNavigation) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    const handlePopState = (e: PopStateEvent) => {
+      if (!allowNavigation) {
+        e.preventDefault();
+        setShowDiscardModal(true);
+        // Push state back to prevent navigation
+        window.history.pushState(null, '', window.location.pathname);
+      }
+    };
+
+    // Block link clicks and navigation
+    const handleClick = (e: MouseEvent) => {
+      if (allowNavigation) return; // Allow click if navigation is allowed
+
+      const target = (e.target as HTMLElement).closest('a');
+      if (target) {
+        const href = target.getAttribute('href');
+        // Allow same-page navigation, external links, and internal modal buttons
+        if (href && !href.startsWith('#') && href !== window.location.pathname && !href.startsWith('javascript:')) {
+          e.preventDefault();
+          e.stopPropagation();
+          setPendingNavigationPath(href);
+          setShowDiscardModal(true);
+        }
+      }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+    document.addEventListener('click', handleClick, true);
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+      document.removeEventListener('click', handleClick, true);
+      // Clear DirectCheckout context when component unmounts
+      if (checkoutData) {
+        clearDirectCheckout();
+      }
     };
-  }, [checkoutItems, navigate, showError, isDirectCheckout]);
+  }, [checkoutItems, navigate, showError, isDirectCheckout, showDiscardModal, allowNavigation]);
 
   const loadCategoryNames = async () => {
     try {
@@ -368,12 +437,25 @@ const CheckoutPage: React.FC = () => {
   };
 
   const handleBackClick = () => {
+    setPendingNavigationPath(isDirectCheckout ? '/browse' : '/cart');
     setShowDiscardModal(true);
   };
 
   const handleConfirmDiscard = () => {
     setShowDiscardModal(false);
-    navigate(isDirectCheckout ? '/browse' : '/cart');
+    setAllowNavigation(true);
+    setTimeout(() => {
+      if (pendingNavigationPath) {
+        // Clear checkout from history and navigate away
+        window.history.replaceState(null, '', pendingNavigationPath);
+        navigate(pendingNavigationPath, { replace: true });
+      } else {
+        // Fallback to browse/cart if no pending path
+        const fallbackPath = isDirectCheckout ? '/browse' : '/cart';
+        window.history.replaceState(null, '', fallbackPath);
+        navigate(fallbackPath, { replace: true });
+      }
+    }, 0);
   };
 
   const formatPrice = (price: number): string => {
@@ -518,8 +600,8 @@ const CheckoutPage: React.FC = () => {
 
         if (item.product.listing_type === 'SERVICE') {
           // SERVICE: Get buyer inputs for schedule and duration
-          orderToInsert.service_schedule = formData.serviceSchedule || formData.preferredServiceDate || null;  // BUYER input
-          orderToInsert.service_duration = formData.preferredServiceDate || null;  // BUYER preferred date
+          orderToInsert.service_duration = formData.rentDuration || null;  // BUYER input (service duration dropdown)
+          orderToInsert.service_schedule = formData.preferredServiceDate || null;  // BUYER input (preferred date)
           orderToInsert.requirements = item.specifications?.requirements || null;  // FROM product
         }
 
@@ -567,7 +649,7 @@ const CheckoutPage: React.FC = () => {
           item_price: item.product.price,
           listing_type: item.product.listing_type,
           quantity: item.quantity,
-          transaction_status: 'pending',
+          transaction_status: 'PENDING',
           category: item.category_name || ''
         };
 
@@ -587,8 +669,8 @@ const CheckoutPage: React.FC = () => {
         }
         else if (item.product.listing_type === 'SERVICE') {
           blockchainData.meetup_location = formData.meetupLocation || item.product.meetup_location || '';
-          blockchainData.service_schedule = formData.serviceSchedule || '';
-          blockchainData.service_duration = item.product?.service_duration || '';
+          blockchainData.service_duration = formData.rentDuration || '';  // BUYER selected duration
+          blockchainData.service_schedule = formData.preferredServiceDate || '';  // BUYER selected preferred date
           blockchainData.requirements = item.specifications?.requirements || '';
           blockchainData.message_to_seller = formData.buyerMessage || '';
         }
@@ -670,9 +752,9 @@ const CheckoutPage: React.FC = () => {
         }
 
         if (item.product.listing_type === 'SERVICE') {
-          transactionData.service_schedule = formData.serviceSchedule || '';
-          transactionData.service_duration = null;
-          transactionData.start_date = formData.preferredServiceDate || null;
+          transactionData.service_duration = formData.rentDuration || '';  // BUYER selected duration
+          transactionData.service_schedule = formData.preferredServiceDate || '';  // BUYER preferred date (stored in service_schedule)
+          transactionData.start_date = formData.preferredServiceDate || null;  // Also store in start_date for consistency
         }
 
         console.log('💾 Inserting transaction to database:', {
@@ -818,10 +900,10 @@ const CheckoutPage: React.FC = () => {
 
   if (pageLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f8f9fa' }}>
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mb-4"></div>
-          <p className="text-gray-600">Loading checkout...</p>
+          <Loader className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: '#208756' }} />
+          <p style={{ color: '#666666' }}>Loading checkout...</p>
         </div>
       </div>
     );
@@ -901,49 +983,104 @@ const CheckoutPage: React.FC = () => {
                         </div>
                         
                         <div className="bg-white rounded p-4 border border-gray-200">
-                          <div className="flex items-center justify-between mb-3">
-                            <div>
-                              <p className="text-sm font-medium text-gray-700 mb-1">Quantity</p>
-                              <div className="flex items-center gap-2">
-                                <p className="text-xs font-medium text-gray-600">Available:</p>
-                                <span className="text-sm font-semibold" style={{ color: '#208756' }}>
-                                  {item.product?.quantity ?? 0} units
-                                </span>
+                          {item.product?.listing_type === 'FOR_SALE' ? (
+                            <>
+                              <div className="flex items-center justify-between mb-3">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-700 mb-1">Quantity</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs font-medium text-gray-600">Available:</p>
+                                    <span className="text-sm font-semibold" style={{ color: '#208756' }}>
+                                      {item.product?.quantity ?? 0} units
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => handleQuantityChange(item.cart_id, item.quantity - 1, item.product?.product_id || 0)}
-                              disabled={item.quantity <= 1 || loading}
-                              className="w-8 h-8 rounded border border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
-                            >
-                              −
-                            </button>
-                            
-                            <input
-                              type="number"
-                              min="1"
-                              max={item.product?.quantity || 1}
-                              value={item.quantity}
-                              onChange={(e) => handleQuantityInput(item.cart_id, item.product?.product_id || 0, e.target.value)}
-                              disabled={loading}
-                              className="w-16 h-8 text-center border border-gray-300 rounded focus:outline-none focus:border-green-600"
-                            />
-                            
-                            <button
-                              onClick={() => handleQuantityChange(item.cart_id, item.quantity + 1, item.product?.product_id || 0)}
-                              disabled={item.quantity >= (item.product?.quantity || 0) || loading}
-                              className="w-8 h-8 rounded border border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
-                            >
-                              +
-                            </button>
-                          </div>
-                          
-                          {(item.product?.quantity ?? 0) === 0 && (
-                            <div className="mt-3 p-2 rounded text-sm text-red-600 bg-red-50">
-                              Out of Stock
+                              
+                              <div className="flex items-center gap-3">
+                                <button
+                                  onClick={() => handleQuantityChange(item.cart_id, item.quantity - 1, item.product?.product_id || 0)}
+                                  disabled={item.quantity <= 1 || loading}
+                                  className="w-8 h-8 rounded border border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                                >
+                                  −
+                                </button>
+                                
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max={item.product?.quantity || 1}
+                                  value={item.quantity}
+                                  onChange={(e) => handleQuantityInput(item.cart_id, item.product?.product_id || 0, e.target.value)}
+                                  disabled={loading}
+                                  className="w-16 h-8 text-center border border-gray-300 rounded focus:outline-none focus:border-green-600"
+                                />
+                                
+                                <button
+                                  onClick={() => handleQuantityChange(item.cart_id, item.quantity + 1, item.product?.product_id || 0)}
+                                  disabled={item.quantity >= (item.product?.quantity || 0) || loading}
+                                  className="w-8 h-8 rounded border border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              
+                              {(item.product?.quantity ?? 0) === 0 && (
+                                <div className="mt-3 p-2 rounded text-sm text-red-600 bg-red-50">
+                                  Out of Stock
+                                </div>
+                              )}
+                            </>
+                          ) : item.product?.listing_type === 'FOR_RENT' ? (
+                            <>
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-medium text-gray-700">Quantity</p>
+                              </div>
+                              
+                              {item.quantity > 1 && (
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => handleQuantityChange(item.cart_id, item.quantity - 1, item.product?.product_id || 0)}
+                                    disabled={item.quantity <= 1 || loading}
+                                    className="w-8 h-8 rounded border border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                                  >
+                                    −
+                                  </button>
+                                  
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={item.quantity}
+                                    onChange={(e) => handleQuantityInput(item.cart_id, item.product?.product_id || 0, e.target.value)}
+                                    disabled={loading}
+                                    className="w-16 h-8 text-center border border-gray-300 rounded focus:outline-none focus:border-green-600"
+                                  />
+                                  
+                                  <button
+                                    onClick={() => handleQuantityChange(item.cart_id, item.quantity + 1, item.product?.product_id || 0)}
+                                    disabled={loading}
+                                    className="w-8 h-8 rounded border border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              )}
+
+                              <div className="flex items-center gap-2 p-3 rounded mt-3" style={{ backgroundColor: '#f5f5f5' }}>
+                                <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: '#ff9800' }} />
+                                <div>
+                                  <p className="text-sm font-medium text-gray-700">Rental Item</p>
+                                  <p className="text-xs text-gray-600">Quantity is fixed at 1 per rental booking.</p>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2 p-3 rounded" style={{ backgroundColor: '#f5f5f5' }}>
+                              <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: '#ff9800' }} />
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">Service</p>
+                                <p className="text-xs text-gray-600">Quantity is fixed at 1 per service booking.</p>
+                              </div>
                             </div>
                           )}
                           
@@ -1105,7 +1242,7 @@ const CheckoutPage: React.FC = () => {
                               className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0 border-3"
                               style={{ 
                                 backgroundColor: '#208756',
-                                borderColor: '#ff9500'
+                                borderColor: '#208756'
                               }}
                             >
                               {sellerInfoMap[item.product?.user_id || '']?.profile_picture_url ? (
@@ -1218,22 +1355,41 @@ const CheckoutPage: React.FC = () => {
                     <h4 className="text-sm font-bold" style={{ color: '#1a1a1a' }}>Order Details</h4>
                   </div>
                   {(item.product?.listing_type?.toUpperCase?.() === 'FOR_SALE' || item.product?.listing_type?.toUpperCase?.() === 'FOR_RENT') && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <MapPin className="w-4 h-4" style={{ color: '#208756' }} />
-                        <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Pickup Location</label>
+                    <>
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <MapPin className="w-4 h-4" style={{ color: '#208756' }} />
+                          <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Pickup Location</label>
+                        </div>
+                        <input
+                          type="text"
+                          value={formData.pickupLocation}
+                          onChange={(e) => handleInputChange('pickupLocation', e.target.value)}
+                          placeholder="Where will you pick up the item?"
+                          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors"
+                          style={{ borderColor: '#d0d0d0' }}
+                          onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
+                          onBlur={(e) => e.target.style.boxShadow = 'none'}
+                        />
                       </div>
-                      <input
-                        type="text"
-                        value={formData.pickupLocation}
-                        onChange={(e) => handleInputChange('pickupLocation', e.target.value)}
-                        placeholder="Where will you pick up the item?"
-                        className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors"
-                        style={{ borderColor: '#d0d0d0' }}
-                        onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
-                        onBlur={(e) => e.target.style.boxShadow = 'none'}
-                      />
-                    </div>
+
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <MessageSquare className="w-4 h-4" style={{ color: '#208756' }} />
+                          <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Requirements or Notes</label>
+                        </div>
+                        <textarea
+                          value={formData.buyerMessage}
+                          onChange={(e) => handleInputChange('buyerMessage', e.target.value)}
+                          placeholder="Any special requirements or notes for the seller..."
+                          rows={3}
+                          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 resize-none transition-colors"
+                          style={{ borderColor: '#d0d0d0' }}
+                          onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
+                          onBlur={(e) => e.target.style.boxShadow = 'none'}
+                        />
+                      </div>
+                    </>
                   )}
 
                   {item.product?.listing_type?.toUpperCase?.() === 'FOR_RENT' && (
@@ -1243,16 +1399,33 @@ const CheckoutPage: React.FC = () => {
                           <Clock className="w-4 h-4" style={{ color: '#208756' }} />
                           <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Rental Duration</label>
                         </div>
-                        <input
-                          type="text"
+                        <select
                           value={formData.rentDuration}
                           onChange={(e) => handleInputChange('rentDuration', e.target.value)}
-                          placeholder="e.g., 1 week, 3 days"
-                          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors"
-                          style={{ borderColor: '#d0d0d0' }}
-                          onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
-                          onBlur={(e) => e.target.style.boxShadow = 'none'}
-                        />
+                          className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-[#208756] focus:ring-2 focus:ring-green-100 text-sm bg-white appearance-none cursor-pointer transition-all duration-200 hover:border-[#208756] shadow-sm"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 12 12'%3E%3Cpath fill='%23208756' d='M1 4l5 5 5-5'/%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 12px center',
+                            paddingRight: '36px'
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = '#208756';
+                            e.currentTarget.style.boxShadow = '0 0 0 2px rgba(32, 135, 86, 0.1)';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = '#d1d5db';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}
+                        >
+                          <option value="">Select rental duration</option>
+                          <option value="Monday-Friday">Monday-Friday</option>
+                          <option value="Weekends only">Weekends only</option>
+                          <option value="Monday-Saturday">Monday-Saturday</option>
+                          <option value="Everyday">Everyday</option>
+                          <option value="By appointment">By appointment</option>
+                          <option value="Flexible schedule">Flexible schedule</option>
+                        </select>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
@@ -1287,6 +1460,23 @@ const CheckoutPage: React.FC = () => {
                           />
                         </div>
                       </div>
+
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <MessageSquare className="w-4 h-4" style={{ color: '#208756' }} />
+                          <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Requirements or Notes</label>
+                        </div>
+                        <textarea
+                          value={formData.buyerMessage}
+                          onChange={(e) => handleInputChange('buyerMessage', e.target.value)}
+                          placeholder="Any special requirements or notes for the seller..."
+                          rows={3}
+                          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 resize-none transition-colors"
+                          style={{ borderColor: '#d0d0d0' }}
+                          onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
+                          onBlur={(e) => e.target.style.boxShadow = 'none'}
+                        />
+                      </div>
                     </>
                   )}
 
@@ -1312,18 +1502,37 @@ const CheckoutPage: React.FC = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <Clock className="w-4 h-4" style={{ color: '#208756' }} />
-                          <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Preferred Schedule</label>
+                          <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Service Duration</label>
                         </div>
-                        <input
-                          type="text"
-                          value={formData.serviceSchedule}
-                          onChange={(e) => handleInputChange('serviceSchedule', e.target.value)}
-                          placeholder="e.g., Weekdays 2-5 PM"
-                          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors"
-                          style={{ borderColor: '#d0d0d0' }}
-                          onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
-                          onBlur={(e) => e.target.style.boxShadow = 'none'}
-                        />
+                        <select
+                          value={formData.rentDuration}
+                          onChange={(e) => handleInputChange('rentDuration', e.target.value)}
+                          className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-[#208756] focus:ring-2 focus:ring-green-100 text-sm bg-white appearance-none cursor-pointer transition-all duration-200 hover:border-[#208756] shadow-sm"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 12 12'%3E%3Cpath fill='%23208756' d='M1 4l5 5 5-5'/%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 12px center',
+                            paddingRight: '36px'
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = '#208756';
+                            e.currentTarget.style.boxShadow = '0 0 0 2px rgba(32, 135, 86, 0.1)';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = '#d1d5db';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}
+                        >
+                          <option value="">Select service duration</option>
+                          <option value="1 hour">1 hour</option>
+                          <option value="1-2 hours">1-2 hours</option>
+                          <option value="2-3 hours">2-3 hours</option>
+                          <option value="3-4 hours">3-4 hours</option>
+                          <option value="Half day (4 hours)">Half day (4 hours)</option>
+                          <option value="Full day (8 hours)">Full day (8 hours)</option>
+                          <option value="Multiple days">Multiple days</option>
+                          <option value="Depends on project">Depends on project</option>
+                        </select>
                       </div>
 
                       <div>
@@ -1341,25 +1550,25 @@ const CheckoutPage: React.FC = () => {
                           onBlur={(e) => e.target.style.boxShadow = 'none'}
                         />
                       </div>
+
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <MessageSquare className="w-4 h-4" style={{ color: '#208756' }} />
+                          <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Message to Seller</label>
+                        </div>
+                        <textarea
+                          value={formData.buyerMessage}
+                          onChange={(e) => handleInputChange('buyerMessage', e.target.value)}
+                          placeholder="Any questions or special requests..."
+                          rows={3}
+                          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 resize-none transition-colors"
+                          style={{ borderColor: '#d0d0d0' }}
+                          onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
+                          onBlur={(e) => e.target.style.boxShadow = 'none'}
+                        />
+                      </div>
                     </>
                   )}
-
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <MessageSquare className="w-4 h-4" style={{ color: '#208756' }} />
-                      <label className="block text-sm font-medium" style={{ color: '#1a1a1a' }}>Message to Seller</label>
-                    </div>
-                    <textarea
-                      value={formData.buyerMessage}
-                      onChange={(e) => handleInputChange('buyerMessage', e.target.value)}
-                      placeholder="Any questions or special requests..."
-                      rows={3}
-                      className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 resize-none transition-colors"
-                      style={{ borderColor: '#d0d0d0' }}
-                      onFocus={(e) => e.target.style.boxShadow = '0 0 0 3px rgba(32, 135, 86, 0.1)'}
-                      onBlur={(e) => e.target.style.boxShadow = 'none'}
-                    />
-                  </div>
                 </div>
               </div>
             ))}
@@ -1369,13 +1578,17 @@ const CheckoutPage: React.FC = () => {
             <div className="bg-white rounded-lg shadow-lg p-6 sticky top-8 space-y-5 border-t-4" style={{ borderTopColor: '#208756' }}>
               {/* Header Section */}
               <div>
-                <h3 className="text-2xl font-bold mb-1" style={{ color: '#1a1a1a' }}>Order Summary</h3>
+                <h3 className="text-2xl font-bold mb-1" style={{ color: '#1a1a1a' }}>
+                  {items.some(item => item.product?.listing_type === 'SERVICE') ? 'Service Acquisition Summary' : 'Order Summary'}
+                </h3>
                 <p className="text-xs" style={{ color: '#999999' }}>Order reference • {new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
               </div>
 
               {/* Items Section */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-3" style={{ backgroundColor: '#f8f9fa' }}>
-                <p className="text-xs font-semibold uppercase" style={{ color: '#999999' }}>Items in Order ({items.length})</p>
+                <p className="text-xs font-semibold uppercase" style={{ color: '#999999' }}>
+                  {items.some(item => item.product?.listing_type === 'SERVICE') ? 'Services' : 'Items in Order'} ({items.length})
+                </p>
                 <div className="space-y-2.5">
                   {items.map((item, index) => {
                     const firstImagePath = item.product?.images?.[0]?.storage_path;
@@ -1577,43 +1790,77 @@ const CheckoutPage: React.FC = () => {
       </div>
 
       {showDiscardModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-sm w-full p-6 border" style={{ borderColor: '#d4e8e4' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold" style={{ color: '#1a1a1a' }}>Leave Checkout?</h3>
-              <button
-                onClick={() => setShowDiscardModal(false)}
-                className="transition-colors"
-                style={{ color: '#999999' }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#666666'}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
-              >
-                <X className="w-6 h-6" />
-              </button>
+        <div className="fixed inset-0 bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+            {/* Header with Icon */}
+            <div className="px-6 pt-6 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: '#e8f4f0', color: '#208756' }}>
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-xl font-bold" style={{ color: '#1a1a1a' }}>Leave Checkout?</h3>
+                </div>
+                <button
+                  onClick={() => setShowDiscardModal(false)}
+                  className="transition-colors p-1 hover:bg-gray-100 rounded-lg"
+                  style={{ color: '#999999' }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = '#666666'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = '#999999'}
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
-            
-            <p className="mb-6" style={{ color: '#666666' }}>
-              Are you sure you want to leave this checkout? Any unsaved information will be lost.
-            </p>
 
-            <div className="flex gap-3">
+            {/* Content */}
+            <div className="px-6 py-4 space-y-4" style={{ backgroundColor: '#f9fafb' }}>
+              <div className="space-y-3">
+                <p className="text-sm font-medium" style={{ color: '#666666' }}>
+                  Are you sure you want to leave checkout?
+                </p>
+                <div className="bg-white rounded-lg p-3 border-l-4" style={{ borderLeftColor: '#208756' }}>
+                  <p className="text-xs" style={{ color: '#999999' }}>
+                    • Your order details will not be saved
+                  </p>
+                  <p className="text-xs mt-1.5" style={{ color: '#999999' }}>
+                    • You'll need to enter everything again
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 border-t flex gap-3" style={{ borderTopColor: '#e5e7eb' }}>
               <button
                 onClick={() => setShowDiscardModal(false)}
-                className="flex-1 px-4 py-2 border-2 rounded-lg font-medium transition-colors"
+                className="flex-1 px-4 py-2.5 border-2 rounded-lg font-semibold transition-all duration-200"
                 style={{ borderColor: '#208756', color: '#208756' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f8f6'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f0f8f6';
+                  e.currentTarget.style.transform = 'scale(1.02)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
               >
                 Continue Checkout
               </button>
               <button
                 onClick={handleConfirmDiscard}
-                className="flex-1 px-4 py-2 text-white rounded-lg font-medium transition-colors"
+                className="flex-1 px-4 py-2.5 text-white rounded-lg font-semibold transition-all duration-200"
                 style={{ backgroundColor: '#208756' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a6c44'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#208756'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#1a6d46';
+                  e.currentTarget.style.transform = 'scale(1.02)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#208756';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
               >
-                Leave
+                Leave Checkout
               </button>
             </div>
           </div>

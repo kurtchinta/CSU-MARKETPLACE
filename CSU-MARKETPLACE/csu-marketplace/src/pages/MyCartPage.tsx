@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useCart } from '../context/CartContext';
 import { useModal } from '../context/ModalContext';
+import Footer from '../components/Footer';
 import { supabase } from '../lib/supabase';
 
 const MyCartPage: React.FC = () => {
@@ -123,11 +124,12 @@ const MyCartPage: React.FC = () => {
   const selectedCount = selectedItems.length;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto px-4 max-w-7xl">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Shopping Cart</h1>
+    <div className="min-h-screen bg-gray-50 flex flex-col mt-4">
+      <div className="flex-1">
+        <div className="max-w-[1200px] mx-auto px-4 py-4">
+          {/* Header */}
+          <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900 mt-2">Shopping Cart</h1>
           <p className="text-gray-600 mt-1">
             {cartItems.length === 0 
               ? 'Your cart is empty' 
@@ -359,7 +361,9 @@ const MyCartPage: React.FC = () => {
             </div>
           </>
         )}
+        </div>
       </div>
+      <Footer />
     </div>
   );
 };

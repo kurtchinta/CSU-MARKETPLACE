@@ -105,10 +105,10 @@ class BlockchainService {
     // Smart Contract Address on Sepolia Testnet (v6.6 - Deployed & Verified: Nov 18, 2025)
     // ✅ Wallet-agnostic: ANY wallet can perform ANY action (accept/reject/cancel/complete)
     // ✅ Multi-transaction model with newSupabaseId for each status change
-    // ✅ Contract verified on Etherscan: https://sepolia.etherscan.io/address/0x3F1fa083D1103e6fea9e3Dd6c1E95b4505Ac6564
+    // ✅ Contract verified on Etherscan: https://sepolia.etherscan.io/address/0x7597d6fe0329aF3DD4b47E7874f1745ADa9C9AaE
     this.contractAddress = import.meta.env.VITE_MARKETPLACE_CONTRACT_ADDRESS || 
                           import.meta.env.VITE_CONTRACT_ADDRESS || 
-                          '0x3F1fa083D1103e6fea9e3Dd6c1E95b4505Ac6564';
+                          '0x7597d6fe0329aF3DD4b47E7874f1745ADa9C9AaE';
     console.log('🔗 Smart Contract Address (v6.6):', this.contractAddress);
   }  async initializeProvider(): Promise<BrowserProvider | null> {
     try {

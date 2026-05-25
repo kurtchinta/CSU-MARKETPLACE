@@ -27,6 +27,8 @@ export const Navbar = () => {
   const [forgotPasswordModalOpen, setForgotPasswordModalOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [accountBgColor, setAccountBgColor] = useState('');
+  const [walletWarningModalOpen, setWalletWarningModalOpen] = useState(false);
+  const [attemptedAction, setAttemptedAction] = useState<'login' | 'register' | null>(null);
 
   // Generate random color on component mount
   useEffect(() => {
@@ -148,6 +150,12 @@ export const Navbar = () => {
 
   const handleLoginClick = () => {
     if (isLandingPage) {
+      // Check if wallet is connected before allowing login
+      if (!account) {
+        setAttemptedAction('login');
+        setWalletWarningModalOpen(true);
+        return;
+      }
       setLoginModalOpen(true);
     } else {
       navigate('/');
@@ -156,6 +164,12 @@ export const Navbar = () => {
 
   const handleRegisterClick = () => {
     if (isLandingPage) {
+      // Check if wallet is connected before allowing registration
+      if (!account) {
+        setAttemptedAction('register');
+        setWalletWarningModalOpen(true);
+        return;
+      }
       setRegisterModalOpen(true);
     } else {
       navigate('/');
@@ -454,23 +468,39 @@ export const Navbar = () => {
       <div className="border-b" style={{ borderColor: 'rgba(255,255,255,0.2)' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-12">
-            {/* Left side - Start Selling link (for all users) */}
-            <div className="flex items-center">
-              <button
-                onClick={() => {
-                  if (!isLoggedIn) {
-                    showWarning('Login Required', 'Please log in or sign up to start selling.');
-                  } else {
-                    navigate('/create-listing');
-                  }
-                }}
-                className="text-white/90 hover:text-yellow-300 text-xs font-medium transition-colors flex items-center space-x-1"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span>Start Selling</span>
-              </button>
+            {/* Left side - Start Selling and My Listings links */}
+            <div className="flex items-center space-x-4">
+              {/* Start Selling Button - Hide for admins */}
+              {!profile?.is_admin && (
+                <button
+                  onClick={() => {
+                    if (!isLoggedIn) {
+                      showWarning('Login Required', 'Please log in or sign up to start selling.');
+                    } else {
+                      navigate('/create-listing');
+                    }
+                  }}
+                  className="text-white/90 hover:text-yellow-300 text-xs font-medium transition-colors flex items-center space-x-1"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Start Selling</span>
+                </button>
+              )}
+              
+              {/* My Listings Button */}
+              {isLoggedIn && !profile?.is_admin && profile && (
+                <button
+                  onClick={() => navigate('/my-listings')}
+                  className="text-white/90 hover:text-yellow-300 text-xs font-medium transition-colors flex items-center space-x-1"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                  </svg>
+                  <span>My Products</span>
+                </button>
+              )}
             </div>
 
             {/* Right side - Notifications, Help, Auth */}
@@ -658,7 +688,7 @@ export const Navbar = () => {
                     onClick={handleLoginClick}
                     className="text-white/90 hover:text-yellow-300 text-xs font-bold transition-colors"
                   >
-                    Login
+                    Sign In
                   </button>
                   <div className="h-4 w-px bg-white/30"></div>
                   <button
@@ -680,13 +710,16 @@ export const Navbar = () => {
           {/* Logo */}
           <Link 
             to="/" 
-            className="flex-shrink-0 flex items-center space-x-3 text-white hover:opacity-80 transition-opacity"
+            className="flex-shrink-0 flex items-center space-x-3 text-white hover:opacity-80 transition-opacity group"
           >
-            <svg className="w-10 h-10" viewBox="0 0 24 24" fill="none">
+            <svg className="w-10 h-10 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none">
               <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
                     stroke="#FFCF50" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span className="text-xl font-bold tracking-wide">CSU Marketplace</span>
+            <span className="text-xl font-black tracking-wider" >
+
+              CSU MARKETPLACE
+            </span>
           </Link>
 
           {/* Desktop Navigation Links - Moved to center */}
@@ -701,23 +734,13 @@ export const Navbar = () => {
                   onMouseEnter={(e) => e.currentTarget.style.color = '#FFCF50'}
                   onMouseLeave={(e) => e.currentTarget.style.color = 'white'}
                 >
-                  <span className="relative z-10 flex items-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    <span>Admin</span>
-                  </span>
+                  <span className="relative z-10">Dashboard</span>
                 </Link>
                 <Link 
                   to="/browse" 
                   className="relative group text-white hover:text-yellow-300 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 hover:bg-white/10"
                 >
-                  <span className="relative z-10 flex items-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <span>Browse</span>
-                  </span>
+                  <span className="relative z-10">Browse</span>
                 </Link>
               </>
             )}
@@ -758,16 +781,6 @@ export const Navbar = () => {
                   {/* Dropdown */}
                   {ordersDropdownOpen && (
                   <div className="absolute left-0 mt-2 w-56 bg-white rounded-xl shadow-2xl py-1 z-50 border-t-4" style={{ borderColor: '#208756' }}>
-                    <Link
-                      to="/my-listings"
-                      className="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 transition-colors"
-                      onClick={() => setOrdersDropdownOpen(false)}
-                    >
-                      <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#208756' }}>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                      </svg>
-                      <span className="font-medium text-gray-900">My Listings</span>
-                    </Link>
                     <Link
                       to="/my-orders"
                       className="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 transition-colors"
@@ -920,153 +933,115 @@ export const Navbar = () => {
                 </div>
               )}
 
-              {/* Cart Icon - Always visible, requires login */}
-              <button
-                onClick={() => {
-                  if (isLoggedIn) {
-                    navigate('/cart');
-                  } else {
-                    showWarning(
-                      'Login Required',
-                      'Please log in to view your shopping cart.',
-                      () => {
-                        if (isLandingPage) {
-                          setLoginModalOpen(true);
-                        } else {
-                          navigate('/');
+              {/* Cart Icon - Only for regular users */}
+              {!profile?.is_admin && (
+                <button
+                  onClick={() => {
+                    if (isLoggedIn) {
+                      navigate('/cart');
+                    } else {
+                      showWarning(
+                        'Login Required',
+                        'Please log in to view your shopping cart.',
+                        () => {
+                          if (isLandingPage) {
+                            setLoginModalOpen(true);
+                          } else {
+                            navigate('/');
+                          }
                         }
-                      }
-                    );
-                  }
-                }}
-                className="relative p-2 text-white hover:text-yellow-300 transition-colors group"
-                aria-label="Shopping cart"
-              >
-                <div className="relative">
-                  <svg 
-                    className="h-6 w-6 group-hover:scale-110 transition-transform" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
-                    />
-                  </svg>
-                  
-                  {/* Cart Count Badge */}
-                  {cartItems && cartItems.length > 0 && (
-                    <span 
-                      className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center"
-                      style={{ backgroundColor: '#ff9500' }}
+                      );
+                    }
+                  }}
+                  className="relative p-2 text-white hover:text-yellow-300 transition-colors group"
+                  aria-label="Shopping cart"
+                >
+                  <div className="relative">
+                    <svg 
+                      className="h-6 w-6 group-hover:scale-110 transition-transform" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                      strokeWidth={2}
                     >
-                      {cartItems.length}
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
+                      />
+                    </svg>
+                    
+                    {/* Cart Count Badge */}
+                    {cartItems && cartItems.length > 0 && (
+                      <span 
+                        className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center"
+                        style={{ backgroundColor: '#ff9500' }}
+                      >
+                        {cartItems.length}
+                      </span>
+                    )}
+                    
+                    {/* Tooltip */}
+                    <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                      {isLoggedIn ? 'My Cart' : 'Login to view cart'}
                     </span>
-                  )}
-                  
-                  {/* Tooltip */}
-                  <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                    {isLoggedIn ? 'My Cart' : 'Login to view cart'}
-                  </span>
-                </div>
-              </button>
+                  </div>
+                </button>
+              )}
 
-              {/* Favorites Icon - Always visible, requires login */}
-              <button
-                onClick={() => {
-                  if (isLoggedIn) {
-                    navigate('/favorites');
-                  } else {
-                    showWarning(
-                      'Login Required',
-                      'Please log in to view your favorites.',
-                      () => {
-                        if (isLandingPage) {
-                          setLoginModalOpen(true);
-                        } else {
-                          navigate('/');
+              {/* Favorites Icon - Only for regular users */}
+              {!profile?.is_admin && (
+                <button
+                  onClick={() => {
+                    if (isLoggedIn) {
+                      navigate('/favorites');
+                    } else {
+                      showWarning(
+                        'Login Required',
+                        'Please log in to view your favorites.',
+                        () => {
+                          if (isLandingPage) {
+                            setLoginModalOpen(true);
+                          } else {
+                            navigate('/');
+                          }
                         }
-                      }
-                    );
-                  }
-                }}
-                className="relative p-2 text-white hover:text-yellow-300 transition-colors group"
-                aria-label="Favorites"
-              >
-                <div className="relative">
-                  <svg 
-                    className="h-6 w-6 group-hover:scale-110 transition-transform" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
-                    />
-                  </svg>
-                  
-                  {/* Tooltip */}
-                  <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                    {isLoggedIn ? 'My Favorites' : 'Login to view favorites'}
-                  </span>
-                </div>
-              </button>
+                      );
+                    }
+                  }}
+                  className="relative p-2 text-white hover:text-yellow-300 transition-colors group"
+                  aria-label="Favorites"
+                >
+                  <div className="relative">
+                    <svg 
+                      className="h-6 w-6 group-hover:scale-110 transition-transform" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                      />
+                    </svg>
+                    
+                    {/* Tooltip */}
+                    <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                      {isLoggedIn ? 'My Favorites' : 'Login to view favorites'}
+                    </span>
+                  </div>
+                </button>
+              )}
 
-              {/* Transaction History Icon - Always visible, requires login */}
-              <button
-                onClick={() => {
-                  if (isLoggedIn) {
-                    navigate('/transaction-history');
-                  } else {
-                    showWarning(
-                      'Login Required',
-                      'Please log in to view your transaction history.',
-                      () => {
-                        if (isLandingPage) {
-                          setLoginModalOpen(true);
-                        } else {
-                          navigate('/');
-                        }
-                      }
-                    );
-                  }
-                }}
-                className="relative p-2 text-white hover:text-yellow-300 transition-colors group"
-                aria-label="Transaction History"
-              >
-                <div className="relative">
-                  <svg 
-                    className="h-6 w-6 group-hover:scale-110 transition-transform" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" 
-                    />
-                  </svg>
-                  
-                  {/* Tooltip */}
-                  <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-                    {isLoggedIn ? 'Transaction History' : 'Login to view history'}
-                  </span>
-                </div>
-              </button>
             </div>
           </div>
 
           {/* Mobile Menu Button - Always show */}
           <div className="md:hidden flex items-center space-x-2">
-            {/* Cart Icon for Mobile - Always visible, requires login */}
+            {/* Cart Icon for Mobile - Only for regular users */}
+            {!profile?.is_admin && (
             <button
               onClick={() => {
                 if (isLoggedIn) {
@@ -1114,8 +1089,8 @@ export const Navbar = () => {
                 )}
               </div>
             </button>
-
-            {/* Favorites Icon for Mobile - Always visible, requires login */}
+            )}
+            {!profile?.is_admin && (
             <button
               onClick={() => {
                 if (isLoggedIn) {
@@ -1151,8 +1126,7 @@ export const Navbar = () => {
                 />
               </svg>
             </button>
-
-            {/* Transaction History Icon for Mobile - Always visible, requires login */}
+            )}
             <button
               onClick={() => {
                 if (isLoggedIn) {
@@ -1436,7 +1410,7 @@ export const Navbar = () => {
                           </svg>
                         </div>
                         <div>
-                          <p className="font-semibold text-gray-900">Seller Orders</p>
+                          <p className="font-semibold text-gray-900">Buyer Orders</p>
                           <p className="text-xs text-gray-500">Buyer requests</p>
                         </div>
                       </div>
@@ -1570,19 +1544,19 @@ export const Navbar = () => {
       {/* Login Modal - Only appears when on landing page */}
       {isLandingPage && loginModalOpen && (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-screen overflow-y-auto border-2" style={{ borderColor: '#42D674' }}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-screen overflow-y-auto border-t-4" style={{ borderColor: '#208756' }}>
             {/* Header with CSU Green */}
-            <div className="px-6 py-8 rounded-t-2xl" style={{ background: 'linear-gradient(135deg, #19693A 0%, #42D674 100%)' }}>
+            <div className="px-6 py-6 border-b border-gray-200">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-3xl font-black text-white mb-2">Welcome Back!</h2>
-                  <p className="text-white/90 text-sm">Sign in to continue to CSU Marketplace</p>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-1">Welcome Back!</h2>
+                  <p className="text-gray-600 text-sm">Sign in to continue to CSU Marketplace</p>
                 </div>
                 <button
                   onClick={() => setLoginModalOpen(false)}
-                  className="text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-lg"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -1603,7 +1577,7 @@ export const Navbar = () => {
                     required
                     value={loginForm.identifier}
                     onChange={(e) => setLoginForm(prev => ({ ...prev, identifier: e.target.value }))}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Enter your username or email"
                   />
                 </div>
@@ -1619,7 +1593,7 @@ export const Navbar = () => {
                     required
                     value={loginForm.password}
                     onChange={(e) => setLoginForm(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Enter your password"
                   />
                 </div>
@@ -1633,9 +1607,9 @@ export const Navbar = () => {
                       checked={loginForm.rememberMe}
                       onChange={(e) => setLoginForm(prev => ({ ...prev, rememberMe: e.target.checked }))}
                       className="h-4 w-4 border-gray-300 rounded"
-                      style={{ accentColor: '#19693A' }}
+                      style={{ accentColor: '#208756' }}
                     />
-                    <label htmlFor="login-remember-me" className="ml-2 block text-sm text-gray-900">
+                    <label htmlFor="login-remember-me" className="ml-2 block text-sm text-gray-700">
                       Remember me
                     </label>
                   </div>
@@ -1645,8 +1619,7 @@ export const Navbar = () => {
                       setLoginModalOpen(false);
                       setForgotPasswordModalOpen(true);
                     }}
-                    className="text-sm font-semibold hover:underline"
-                    style={{ color: '#19693A' }}
+                    className="text-sm font-medium text-[#208756] hover:text-[#1a6d45] transition-colors"
                   >
                     Forgot password?
                   </button>
@@ -1679,8 +1652,7 @@ export const Navbar = () => {
                       setLoginModalOpen(false);
                       setRegisterModalOpen(true);
                     }}
-                    className="font-bold hover:underline"
-                    style={{ color: '#FF7F1C' }}
+                    className="font-semibold text-[#208756] hover:text-[#1a6d45] transition-colors"
                   >
                     Sign up
                   </button>
@@ -1694,19 +1666,19 @@ export const Navbar = () => {
       {/* Register Modal - Only appears when on landing page */}
       {isLandingPage && registerModalOpen && (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-screen overflow-y-auto border-2" style={{ borderColor: '#42D674' }}>
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-screen overflow-y-auto border-t-4" style={{ borderColor: '#208756' }}>
             {/* Header with CSU Green */}
-            <div className="px-6 py-8 rounded-t-2xl" style={{ background: 'linear-gradient(135deg, #19693A 0%, #42D674 100%)' }}>
+            <div className="px-6 py-6 border-b border-gray-200">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-3xl font-black text-white mb-2">Join CSU Marketplace</h2>
-                  <p className="text-white/90 text-sm">Create your account and start trading</p>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-1">Join CSU Marketplace</h2>
+                  <p className="text-gray-600 text-sm">Create your account and start trading</p>
                 </div>
                 <button
                   onClick={() => setRegisterModalOpen(false)}
-                  className="text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-lg"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -1727,7 +1699,7 @@ export const Navbar = () => {
                       type="text"
                       required
                       maxLength={100}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                       placeholder="First name"
                     />
                   </div>
@@ -1742,7 +1714,7 @@ export const Navbar = () => {
                       type="text"
                       required
                       maxLength={100}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                       placeholder="Last name"
                     />
                   </div>
@@ -1758,7 +1730,7 @@ export const Navbar = () => {
                     type="email"
                     required
                     maxLength={255}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Enter your email address"
                   />
                 </div>
@@ -1774,7 +1746,7 @@ export const Navbar = () => {
                     required
                     minLength={3}
                     maxLength={50}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Enter Username"
                   />
                 </div>
@@ -1789,8 +1761,8 @@ export const Navbar = () => {
                     type="text"
                     required
                     maxLength={9}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
-                    placeholder="221-01385"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
+                    placeholder="2XXX-XXXXX"
                     onInput={(e) => {
                       const target = e.target as HTMLInputElement;
                       let value = target.value.replace(/[^0-9]/g, '');
@@ -1811,7 +1783,7 @@ export const Navbar = () => {
                       id="register-gender"
                       name="gender"
                       required
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     >
                       <option value="">Select gender</option>
                       <option value="male">Male</option>
@@ -1828,16 +1800,14 @@ export const Navbar = () => {
                       id="register-yearLevel"
                       name="yearLevel"
                       required
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     >
                       <option value="">Select year level</option>
                       <option value="1st Year">1st Year</option>
                       <option value="2nd Year">2nd Year</option>
                       <option value="3rd Year">3rd Year</option>
                       <option value="4th Year">4th Year</option>
-                      <option value="5th Year">5th Year</option>
-                      <option value="Graduate">Graduate</option>
-                      <option value="Faculty">Faculty</option>
+                      <option value="5th Year">5th Year</option>  
                     </select>
                   </div>
                 </div>
@@ -1852,8 +1822,8 @@ export const Navbar = () => {
                     type="text"
                     required
                     maxLength={20}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
-                    placeholder="09385416513"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
+                    placeholder="09XXXXXXXXX"
                     onInput={(e) => {
                       const target = e.target as HTMLInputElement;
                       target.value = target.value.replace(/[^0-9]/g, '');
@@ -1871,18 +1841,18 @@ export const Navbar = () => {
                     type="text"
                     required
                     maxLength={100}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
-                    placeholder="CCIS"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
+                    placeholder="Enter your department"
                   />
                 </div>
 
                 {/* Wallet Address Display (if connected) */}
                 {walletConnected && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
                       MetaMask Wallet Address
                     </label>
-                    <div className="w-full px-3 py-2 bg-green-50 border border-green-300 rounded-md text-sm text-green-800">
+                    <div className="w-full px-4 py-2.5 bg-green-50 border border-green-300 rounded-lg text-sm text-green-800">
                       <div className="flex items-center">
                         <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
                         <span className="font-mono">{account}</span>
@@ -1903,7 +1873,7 @@ export const Navbar = () => {
                     name="password"
                     type="password"
                     required
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Create a password"
                   />
                 </div>
@@ -1917,7 +1887,7 @@ export const Navbar = () => {
                     name="confirmPassword"
                     type="password"
                     required
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Confirm your password"
                   />
                 </div>
@@ -1928,15 +1898,15 @@ export const Navbar = () => {
                     type="checkbox"
                     required
                     className="h-4 w-4 border-gray-300 rounded"
-                    style={{ accentColor: '#19693A' }}
+                    style={{ accentColor: '#208756' }}
                   />
-                  <label htmlFor="register-terms" className="ml-2 block text-sm text-gray-900">
+                  <label htmlFor="register-terms" className="ml-2 block text-sm text-gray-700">
                     I agree to the{" "}
-                    <button type="button" className="font-semibold hover:underline" style={{ color: '#19693A' }}>
+                    <button type="button" className="font-semibold text-[#208756] hover:text-[#1a6d45] transition-colors">
                       Terms of Service
                     </button>{" "}
                     and{" "}
-                    <button type="button" className="font-semibold hover:underline" style={{ color: '#19693A' }}>
+                    <button type="button" className="font-semibold text-[#208756] hover:text-[#1a6d45] transition-colors">
                       Privacy Policy
                     </button>
                   </label>
@@ -1945,8 +1915,11 @@ export const Navbar = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full font-bold py-3 px-4 rounded-xl transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-xl"
-                  style={isSubmitting ? { backgroundColor: '#9CA3AF', color: 'white', cursor: 'not-allowed' } : { background: 'linear-gradient(to right, #19693A, #42D674)', color: 'white' }}
+                  className={`w-full font-semibold py-2.5 px-4 rounded-lg transition-colors ${
+                    isSubmitting 
+                      ? 'bg-gray-400 cursor-not-allowed' 
+                      : 'bg-[#208756] hover:bg-[#1a6d45]'
+                  } text-white`}
                 >
                   {isSubmitting ? (
                     <span className="flex items-center justify-center">
@@ -1969,8 +1942,7 @@ export const Navbar = () => {
                       setRegisterModalOpen(false);
                       setLoginModalOpen(true);
                     }}
-                    className="font-bold hover:underline"
-                    style={{ color: '#19693A' }}
+                    className="font-semibold text-[#208756] hover:text-[#1a6d45] transition-colors"
                   >
                     Sign in
                   </button>
@@ -1984,22 +1956,22 @@ export const Navbar = () => {
       {/* Forgot Password Modal */}
       {isLandingPage && forgotPasswordModalOpen && (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-screen overflow-y-auto border-2" style={{ borderColor: '#42D674' }}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-screen overflow-y-auto border-t-4" style={{ borderColor: '#208756' }}>
             {/* Header with CSU Green */}
-            <div className="px-6 py-8 rounded-t-2xl" style={{ background: 'linear-gradient(135deg, #19693A 0%, #42D674 100%)' }}>
+            <div className="px-6 py-6 border-b border-gray-200">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-3xl font-black text-white mb-2">Reset Password</h2>
-                  <p className="text-white/90 text-sm">Enter your email to receive a reset link</p>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-1">Reset Password</h2>
+                  <p className="text-gray-600 text-sm">Enter your email to receive a reset link</p>
                 </div>
                 <button
                   onClick={() => {
                     setForgotPasswordModalOpen(false);
                     setResetEmail('');
                   }}
-                  className="text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-lg"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -2007,12 +1979,12 @@ export const Navbar = () => {
             </div>
 
             <div className="p-6">
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-start space-x-3">
-                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-[#208756] mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <div className="text-sm text-blue-800">
+                  <div className="text-sm text-gray-700">
                     <p className="font-semibold mb-1">How it works:</p>
                     <ol className="list-decimal list-inside space-y-1 text-xs">
                       <li>Enter your registered email address</li>
@@ -2036,7 +2008,7 @@ export const Navbar = () => {
                     required
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 transition-colors"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#208756] focus:border-transparent transition-all"
                     placeholder="Enter your email address"
                   />
                 </div>
@@ -2044,8 +2016,11 @@ export const Navbar = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full font-bold py-3 px-4 rounded-xl transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-xl"
-                  style={isSubmitting ? { backgroundColor: '#9CA3AF', color: 'white', cursor: 'not-allowed' } : { background: 'linear-gradient(to right, #19693A, #42D674)', color: 'white' }}
+                  className={`w-full font-semibold py-2.5 px-4 rounded-lg transition-colors ${
+                    isSubmitting 
+                      ? 'bg-gray-400 cursor-not-allowed' 
+                      : 'bg-[#208756] hover:bg-[#1a6d45]'
+                  } text-white`}
                 >
                   {isSubmitting ? (
                     <span className="flex items-center justify-center">
@@ -2069,8 +2044,7 @@ export const Navbar = () => {
                       setResetEmail('');
                       setLoginModalOpen(true);
                     }}
-                    className="font-bold hover:underline"
-                    style={{ color: '#19693A' }}
+                    className="font-semibold text-[#208756] hover:text-[#1a6d45] transition-colors"
                   >
                     Sign in
                   </button>
@@ -2146,6 +2120,204 @@ export const Navbar = () => {
               >
                 {alertConfig.confirmText || 'OK'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallet Warning Modal - MetaMask Required */}
+      {walletWarningModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop - Non-dismissible */}
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" />
+          
+          {/* Modal */}
+          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-2xl transform transition-all animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+            {/* Header with Warning Icon */}
+            <div className="bg-gradient-to-r from-red-500 to-orange-500 p-6 rounded-t-lg">
+              <div className="flex items-center justify-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 animate-pulse">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.996-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <h3 className="text-2xl font-bold text-white">
+                  MetaMask Wallet Required
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Main Message */}
+              <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+                <p className="text-gray-800 font-semibold mb-2">
+                  ⚠️ You must connect your MetaMask wallet before {attemptedAction === 'login' ? 'signing in' : 'creating an account'}!
+                </p>
+                <p className="text-gray-600 text-sm">
+                  CSU Marketplace uses blockchain technology for secure transactions. A connected wallet is required for all platform activities.
+                </p>
+              </div>
+
+              {/* Setup Requirements */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold">!</span>
+                  Before You Continue - Required Steps:
+                </h4>
+                
+                <div className="space-y-3">
+                  {/* Step 1 */}
+                  <div className="flex gap-3 items-start">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#208756] text-white text-sm font-bold flex-shrink-0">1</div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Install MetaMask Browser Extension</p>
+                      <p className="text-sm text-gray-600">Download from <a href="https://metamask.io" target="_blank" rel="noopener noreferrer" className="text-[#208756] hover:underline">metamask.io</a></p>
+                    </div>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="flex gap-3 items-start">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#208756] text-white text-sm font-bold flex-shrink-0">2</div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Add Sepolia Test Network</p>
+                      <p className="text-sm text-gray-600">Configure MetaMask to use Ethereum Sepolia testnet</p>
+                    </div>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="flex gap-3 items-start">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#208756] text-white text-sm font-bold flex-shrink-0">3</div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Get Sepolia ETH from Faucet</p>
+                      <p className="text-sm text-gray-600">Visit faucet website and request test ETH</p>
+                      <p className="text-xs text-orange-600 font-semibold mt-1">⏱️ Wait at least 10 minutes for ETH to arrive</p>
+                    </div>
+                  </div>
+
+                  {/* Step 4 */}
+                  <div className="flex gap-3 items-start">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#208756] text-white text-sm font-bold flex-shrink-0">4</div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Connect Wallet to CSU Marketplace</p>
+                      <p className="text-sm text-gray-600">Click "Connect Wallet" button in the navbar</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Important Resources */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+                <h4 className="font-bold text-blue-900 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  Need Help? Read These Guides:
+                </h4>
+                <div className="space-y-1 text-sm">
+                  <a 
+                    href="/" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setWalletWarningModalOpen(false);
+                      navigate('/');
+                      setTimeout(() => {
+                        document.getElementById('user-guide')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }}
+                    className="block text-[#208756] hover:underline font-medium"
+                  >
+                    📖 Complete User Guide (Step-by-step MetaMask setup)
+                  </a>
+                  <a 
+                    href="/" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setWalletWarningModalOpen(false);
+                      navigate('/');
+                      setTimeout(() => {
+                        document.getElementById('safety-guidelines')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }}
+                    className="block text-[#208756] hover:underline font-medium"
+                  >
+                    🛡️ Safety Guidelines (Protect yourself from scams)
+                  </a>
+                  <a 
+                    href="/" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setWalletWarningModalOpen(false);
+                      navigate('/');
+                      setTimeout(() => {
+                        document.getElementById('faqs')?.scrollIntoView({ behavior: 'smooth' });
+                      }, 100);
+                    }}
+                    className="block text-[#208756] hover:underline font-medium"
+                  >
+                    ❓ Frequently Asked Questions
+                  </a>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                {account ? (
+                  <button
+                    onClick={() => {
+                      setWalletWarningModalOpen(false);
+                      if (attemptedAction === 'login') {
+                        setLoginModalOpen(true);
+                      } else {
+                        setRegisterModalOpen(true);
+                      }
+                      setAttemptedAction(null);
+                    }}
+                    className="flex-1 py-3 px-4 rounded-lg text-white font-semibold bg-[#208756] hover:bg-[#1a6d45] transition-all hover:scale-[1.02] shadow-md"
+                  >
+                    ✓ Wallet Connected - Continue
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setWalletWarningModalOpen(false);
+                        navigate('/');
+                        setTimeout(() => {
+                          document.getElementById('user-guide')?.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }}
+                      className="flex-1 py-3 px-4 rounded-lg text-gray-700 font-semibold bg-gray-100 hover:bg-gray-200 transition-colors border border-gray-300"
+                    >
+                      Read Setup Guide
+                    </button>
+                    <button
+                      onClick={() => setWalletWarningModalOpen(false)}
+                      className="flex-1 py-3 px-4 rounded-lg text-white font-semibold bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 transition-all hover:scale-[1.02] shadow-md"
+                    >
+                      Close
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Current Wallet Status */}
+              <div className="text-center text-sm">
+                {account ? (
+                  <p className="text-green-600 font-semibold flex items-center justify-center gap-2">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    Wallet Connected: {account.substring(0, 6)}...{account.substring(account.length - 4)}
+                  </p>
+                ) : (
+                  <p className="text-orange-600 font-semibold flex items-center justify-center gap-2">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    No Wallet Connected - Please connect MetaMask first
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>

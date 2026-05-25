@@ -41,9 +41,6 @@ contract CSUMarketplace {
         // Participant information
         address buyerWallet;
         address sellerWallet;
-        string buyerName;
-        string sellerName;
-        string sellerPhone;
         
         // Product/Service details
         string category;
@@ -114,8 +111,6 @@ contract CSUMarketplace {
         string orderId,
         address indexed buyerWallet,
         address indexed sellerWallet,
-        string buyerName,
-        string sellerName,
         string category,
         string listingType,
         string itemName,
@@ -138,7 +133,6 @@ contract CSUMarketplace {
         string orderId,
         address indexed buyerWallet,
         address indexed sellerWallet,
-        string sellerName,
         string itemName,
         uint256 itemPrice,
         uint256 quantity,
@@ -158,7 +152,6 @@ contract CSUMarketplace {
         string orderId,
         address indexed buyerWallet,
         address indexed sellerWallet,
-        string sellerName,
         string itemName,
         uint256 itemPrice,
         uint256 quantity,
@@ -197,7 +190,6 @@ contract CSUMarketplace {
         string orderId,
         address indexed buyerWallet,
         address indexed sellerWallet,
-        string buyerName,
         string itemName,
         uint256 itemPrice,
         uint256 quantity,
@@ -271,9 +263,6 @@ contract CSUMarketplace {
         string orderId;
         address buyerWallet;
         address sellerWallet;
-        string buyerName;
-        string sellerName;
-        string sellerPhone;
         string category;
         string listingType;
         string itemName;
@@ -320,9 +309,6 @@ contract CSUMarketplace {
         txn.orderId = params.orderId;
         txn.buyerWallet = params.buyerWallet;
         txn.sellerWallet = params.sellerWallet;
-        txn.buyerName = params.buyerName;
-        txn.sellerName = params.sellerName;
-        txn.sellerPhone = params.sellerPhone;
         txn.category = params.category;
         txn.listingType = params.listingType;
         txn.itemName = params.itemName;
@@ -358,8 +344,6 @@ contract CSUMarketplace {
             params.orderId,
             params.buyerWallet,
             params.sellerWallet,
-            params.buyerName,
-            params.sellerName,
             params.category,
             params.listingType,
             params.itemName,
@@ -410,9 +394,6 @@ contract CSUMarketplace {
         newTxn.orderId = originalTxn.orderId;
         newTxn.buyerWallet = originalTxn.buyerWallet;
         newTxn.sellerWallet = originalTxn.sellerWallet;
-        newTxn.buyerName = originalTxn.buyerName;
-        newTxn.sellerName = originalTxn.sellerName;
-        newTxn.sellerPhone = originalTxn.sellerPhone;
         newTxn.category = originalTxn.category;
         newTxn.listingType = originalTxn.listingType;
         newTxn.itemName = originalTxn.itemName;
@@ -453,7 +434,6 @@ contract CSUMarketplace {
             originalTxn.orderId,
             originalTxn.buyerWallet,
             msg.sender,
-            originalTxn.sellerName,
             originalTxn.itemName,
             originalTxn.itemPrice,
             originalTxn.quantity,
@@ -507,9 +487,6 @@ contract CSUMarketplace {
         newTxn.orderId = originalTxn.orderId;
         newTxn.buyerWallet = originalTxn.buyerWallet;
         newTxn.sellerWallet = originalTxn.sellerWallet;
-        newTxn.buyerName = originalTxn.buyerName;
-        newTxn.sellerName = originalTxn.sellerName;
-        newTxn.sellerPhone = originalTxn.sellerPhone;
         newTxn.category = originalTxn.category;
         newTxn.listingType = originalTxn.listingType;
         newTxn.itemName = originalTxn.itemName;
@@ -549,7 +526,6 @@ contract CSUMarketplace {
             originalTxn.orderId,
             originalTxn.buyerWallet,
             msg.sender,
-            originalTxn.sellerName,
             originalTxn.itemName,
             originalTxn.itemPrice,
             originalTxn.quantity,
@@ -673,9 +649,6 @@ contract CSUMarketplace {
         newTxn.orderId = originalTxn.orderId;
         newTxn.buyerWallet = originalTxn.buyerWallet;
         newTxn.sellerWallet = originalTxn.sellerWallet;
-        newTxn.buyerName = originalTxn.buyerName;
-        newTxn.sellerName = originalTxn.sellerName;
-        newTxn.sellerPhone = originalTxn.sellerPhone;
         newTxn.category = originalTxn.category;
         newTxn.listingType = originalTxn.listingType;
         newTxn.itemName = originalTxn.itemName;
@@ -717,7 +690,6 @@ contract CSUMarketplace {
             originalTxn.orderId,
             msg.sender,
             originalTxn.sellerWallet,
-            originalTxn.buyerName,
             originalTxn.itemName,
             originalTxn.itemPrice,
             originalTxn.quantity,
@@ -838,9 +810,6 @@ contract CSUMarketplace {
         newTxn.orderId = originalTxn.orderId;
         newTxn.buyerWallet = originalTxn.buyerWallet;
         newTxn.sellerWallet = originalTxn.sellerWallet;
-        newTxn.buyerName = originalTxn.buyerName;
-        newTxn.sellerName = originalTxn.sellerName;
-        newTxn.sellerPhone = originalTxn.sellerPhone;
         newTxn.category = originalTxn.category;
         newTxn.listingType = originalTxn.listingType;
         newTxn.itemName = originalTxn.itemName;

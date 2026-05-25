@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { productService, type Product, type Category } from '../services/productService';
 import { useModal } from '../context/ModalContext';
 import ImageCarousel from '../components/ImageCarousel';
+import Footer from '../components/Footer';
 import { supabase } from '../lib/supabase';
+import { Users, MapPin, Phone } from 'lucide-react';
 
 const BrowsePage: React.FC = () => {
   const navigate = useNavigate();
@@ -681,28 +683,34 @@ const BrowsePage: React.FC = () => {
                 <div 
                   key={product.product_id} 
                   onClick={() => navigateToProductDetails(product.product_id)}
-                  className="bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+                  className="bg-white rounded-lg overflow-hidden hover:shadow-lg transition-all cursor-pointer border-2 border-gray-200 hover:border-[#208756]"
                 >
                   {/* Product Image */}
                   <div className="relative w-full" style={{ paddingBottom: '100%' }}>
                     <div className="absolute inset-0">
-                      <ImageCarousel 
-                        images={product.images}
-                        productName={product.product_name}
-                        className="h-full w-full"
-                      />
+                      {product.images && product.images.length > 0 ? (
+                        <ImageCarousel 
+                          images={product.images}
+                          productName={product.product_name}
+                          className="h-full w-full"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gray-200 rounded-lg overflow-hidden flex flex-col items-center justify-center">
+                          <svg className="w-12 h-12 text-gray-400 mb-2" viewBox="0 0 24 24" fill="none">
+                            <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" 
+                              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          <p className="text-gray-400 text-sm">No image available</p>
+                        </div>
+                      )}
                     </div>
-                    
-                    {/* Listing Type Badge */}
-                    <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold text-white ${
-                      product.listing_type === 'FOR_SALE' 
-                        ? 'bg-green-600' 
-                        : product.listing_type === 'FOR_RENT'
-                        ? 'bg-blue-500'
-                        : 'bg-purple-600'
-                    }`}>
-                      {product.listing_type === 'FOR_SALE' ? 'FOR SALE' : product.listing_type === 'FOR_RENT' ? 'FOR RENT' : 'SERVICE'}
-                    </div>
+
+                    {/* Image Counter - Top Right */}
+                    {product.images && product.images.length > 1 && (
+                      <div className="absolute top-3 right-3 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center space-x-1 border-opacity-50">
+                        <span className="text-xs font-bold text-green-800">+{product.images.length - 1}</span>
+                      </div>
+                    )}
 
                     {/* Sold Out Badge */}
                     {product.quantity === 0 && product.listing_type === 'FOR_SALE' && (
@@ -724,49 +732,57 @@ const BrowsePage: React.FC = () => {
                       {product.description}
                     </p>
 
-                    {/* Price */}
-                    <div className="mb-2">
+                    {/* Price & Listing Type Badge */}
+                    <div className="flex items-center justify-between mb-2">
                       <p className="text-lg font-bold" style={{ color: '#208756' }}>
                         {formatPrice(product.price)}
                       </p>
-                    </div>
-
-                    {/* Seller Info */}
-                    <div className="pb-2 border-t border-gray-100 pt-2">
-                      <div className="flex items-center space-x-2">
-                        {product.seller?.profile_picture ? (
-                          <img
-                            src={product.seller.profile_picture}
-                            alt={product.seller.username}
-                            className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
-                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                            </svg>
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-600 truncate font-medium">
-                            {product.seller?.username || 'Unknown'}
-                          </p>
-                        </div>
-                        {product.seller?.phone_number && (
-                          <div className="flex items-center space-x-1 flex-shrink-0">
-                            <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                            </svg>
-                            <p className="text-xs text-gray-500 truncate">
-                              {product.seller.phone_number}
-                            </p>
-                          </div>
-                        )}
+                      <div className={`px-2.5 py-1 rounded-full text-xs font-semibold text-white ${
+                        product.listing_type === 'FOR_SALE' 
+                          ? 'bg-[#208756]' 
+                          : product.listing_type === 'FOR_RENT'
+                          ? 'bg-blue-600'
+                          : 'bg-purple-600'
+                      }`}>
+                        {product.listing_type === 'FOR_SALE' ? 'For Sale' : product.listing_type === 'FOR_RENT' ? 'For Rent' : 'Service'}
                       </div>
                     </div>
+
+                      {/* Seller Info */}
+                      <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                        <div className="flex-shrink-0">
+                          {product.seller?.profile_picture ? (
+                            <img
+                              src={product.seller.profile_picture.startsWith('http') 
+                                ? product.seller.profile_picture 
+                                : `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/profile-pictures/${product.seller.profile_picture}`
+                              }
+                              alt={`${product.seller?.first_name} ${product.seller?.last_name}`}
+                              className="w-8 h-8 rounded-full object-cover border-2 border-[#208756]"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-gradient-to-br from-[#208756] to-[#1a6d45] rounded-full flex items-center justify-center">
+                              <Users className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-900 truncate">
+                            {product.seller?.first_name} {product.seller?.last_name}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {product.seller?.phone_number && (
+                              <Phone className="w-3 h-3 text-gray-400" />
+                            )}
+                            <p className="text-xs text-gray-500 truncate">
+                              {product.seller?.phone_number || product.seller?.username}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                   
                   {/* Seller Rating */}
-                  <div className="flex items-center space-x-1 mt-0.5 mb-2">
+                  <div className="flex items-center space-x-1 mt-0.5 mb-2 mt-3">
                     <svg className="w-3 h-3 text-yellow-400 fill-current" viewBox="0 0 20 20">
                       <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
                     </svg>
@@ -782,23 +798,18 @@ const BrowsePage: React.FC = () => {
                     ) : (
                       <span className="text-xs text-gray-400">No ratings ({product.seller?.total_reviews_received || 0})</span>
                     )}
-                  </div>                    {/* Rating */}
+                  </div>      
+                    {/* Product Reviews */}
                     <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-                      <div className="flex items-center space-x-1">
-                        <svg className="w-3 h-3 text-yellow-400 fill-current" viewBox="0 0 20 20">
-                          <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                        </svg>
-                        {productRatings[product.product_id] && productRatings[product.product_id].count > 0 && productRatings[product.product_id].avgRating > 0 ? (
-                          <>
-                            <span className="font-medium text-gray-900">{productRatings[product.product_id].avgRating.toFixed(1)}</span>
-                            <span className="text-gray-500">({productRatings[product.product_id].count})</span>
-                          </>
+                      <div>
+                        {productRatings[product.product_id] && productRatings[product.product_id].count > 0 ? (
+                          <span className="text-gray-700 font-medium">({productRatings[product.product_id].count}) reviewed</span>
                         ) : (
-                          <span className="text-gray-400">No Reviews ({productRatings[product.product_id]?.count || 0})</span>
+                          <span className="text-gray-400">No reviews</span>
                         )}
                       </div>
-                      {/* Sold Count Badge */}
-                      {(product.sold_count ?? 0) > 0 && (
+                      {/* Sold Count Badge - Only for FOR_SALE */}
+                      {product.listing_type === 'FOR_SALE' && (
                         <div className="flex items-center space-x-1">
                           <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/>
@@ -806,15 +817,13 @@ const BrowsePage: React.FC = () => {
                           <span className="font-medium text-green-600">{product.sold_count} sold</span>
                         </div>
                       )}
+                      {/* Services Acquired Count Badge - Only for SERVICE */}
                     </div>
 
                     {/* Pickup Location for Rental Products */}
                     {product.listing_type === 'FOR_RENT' && (
                       <div className="flex items-center space-x-1 text-xs text-gray-500 mb-2">
-                        <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                        <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0 mt-0.5" />
                         <p className="truncate">{product.pickup_location || 'N/A'}</p>
                       </div>
                     )}
@@ -830,13 +839,10 @@ const BrowsePage: React.FC = () => {
                     {product.listing_type === 'SERVICE' && (
                       <div className="space-y-1 mb-2">
                         <div className="flex items-center space-x-1 text-xs text-gray-500">
-                          <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
+                          <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0 mt-0.5" />
                           <p className="truncate">{product.meetup_location || 'N/A'}</p>
                         </div>
-                        <div className="text-xs text-gray-500 mb-2 mt-2">
+                        <div className="text-xs text-gray-500 mt-2">
                           Schedule: {product.service_schedule || 'N/A'}
                         </div>
                       </div>
@@ -847,10 +853,7 @@ const BrowsePage: React.FC = () => {
                       <div className="flex items-center justify-between text-xs text-gray-500">
                         {/* Pickup Location */}
                         <div className="flex items-center space-x-1 flex-1 min-w-0">
-                          <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
+                          <MapPin className="w-3.5 h-3.5 text-[#208756] flex-shrink-0 mt-0.5" />
                           <p className="truncate">{product.pickup_location || 'N/A'}</p>
                         </div>
                         {/* Sold Count */}
@@ -885,46 +888,7 @@ const BrowsePage: React.FC = () => {
     </div>
       
     {/* Footer */}
-      <footer className="bg-gray-800 text-white mt-12">
-        <div className="container mx-auto px-6 lg:px-12 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
-            {/* About Section */}
-            <div>
-              <h3 className="text-lg font-bold mb-3">CSU Marketplace</h3>
-              <p className="text-sm text-gray-300">
-                Your trusted platform for buying, selling, and renting within the CSU community.
-              </p>
-            </div>
-            
-            {/* Quick Links */}
-            <div>
-              <h3 className="text-lg font-bold mb-3">Quick Links</h3>
-              <ul className="space-y-2 text-sm text-gray-300">
-                <li><a href="/browse" className="hover:text-white transition-colors">Browse Products</a></li>
-                <li><a href="/create-listing" className="hover:text-white transition-colors">Create Listing</a></li>
-                <li><a href="/dashboard" className="hover:text-white transition-colors">Dashboard</a></li>
-                <li><a href="/profile" className="hover:text-white transition-colors">My Profile</a></li>
-              </ul>
-            </div>
-            
-            {/* Contact Info */}
-            <div>
-              <h3 className="text-lg font-bold mb-3">Contact Us</h3>
-              <ul className="space-y-2 text-sm text-gray-300">
-                <li>Caraga State University</li>
-                <li>Butuan City, Philippines</li>
-              </ul>
-            </div>
-          </div>
-          
-          {/* Copyright */}
-          <div className="border-t border-gray-700 pt-6 text-center">
-            <p className="text-sm text-gray-400">
-              © {new Date().getFullYear()} CSU Marketplace. All rights reserved. | Powered by Blockchain Technology
-            </p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 };

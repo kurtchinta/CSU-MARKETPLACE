@@ -11,6 +11,7 @@ import CheckoutPage from "./pages/CheckoutPage.tsx";
 import MyOrdersPage from "./pages/MyOrdersPage.tsx";
 import SellerOrdersPage from "./pages/SellerOrdersPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
+import SellerProfilePage from "./pages/SellerProfilePage.tsx";
 import DashboardPage from "./pages/DashboardPage.tsx";
 import HelpPage from "./pages/HelpPage.tsx";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage.tsx";
@@ -174,6 +175,16 @@ function App() {
                     element={
                       <ProtectedPageWrapper routeType="shared">
                         <ProductDetails />
+                      </ProtectedPageWrapper>
+                    } 
+                  />
+
+                  {/* Seller profile page - shared by both admin and user */}
+                  <Route 
+                    path="/seller/:sellerId" 
+                    element={
+                      <ProtectedPageWrapper routeType="shared">
+                        <SellerProfilePage />
                       </ProtectedPageWrapper>
                     } 
                   />

@@ -1,55 +1,77 @@
 # CSU Marketplace - AI Agent Guidelines
 
-## Project Architecture
+## Project Overview
 
-This is a **Hardhat 3 Beta TypeScript project** for CSU Marketplace smart contract development using modern blockchain tooling.
+**CSU Marketplace** is a hybrid blockchain-integrated campus trading platform for Cagayan State University students and faculty, combining traditional web technologies (React + Supabase) with Ethereum smart contracts for immutable transaction records.
 
 **GitHub Repository**: https://github.com/kurtchinta/CSU-MARKETPLACE
 
-### Key Components
-- **Smart Contract**: `contracts/Counter.sol` - Example contract (to be replaced with CSUMarketplace.sol)
-- **Testing**: Foundry-compatible Solidity tests + TypeScript integration tests using Hardhat + ethers.js
-- **Build System**: Hardhat 3 Beta with TypeScript configuration (`hardhat.config.ts`)
-- **Deployment**: Hardhat Ignition modules in `ignition/modules/`
+### Dual-Workspace Architecture
+
+```
+CSU-MARKETPLACE/
+├── BLOCKCHAIN-CONTRACT/        # Hardhat 2 smart contract workspace
+│   ├── contracts/             # Solidity contracts (CSUMarketplace.sol)
+│   ├── test/                  # TypeScript contract tests
+│   ├── ignition/modules/      # Hardhat Ignition deployment
+│   └── hardhat.config.ts      # Loads .env from frontend workspace
+└── CSU-MARKETPLACE/csu-marketplace/  # React + Vite frontend
+    ├── src/                   # Frontend application code
+    │   ├── context/          # React Context (Auth, Wallet, Cart)
+    │   ├── services/         # API services (blockchain, auth, products)
+    │   ├── pages/            # Route components
+    │   ├── database/         # PostgreSQL schema files
+    │   └── contractJSON/     # Compiled contract ABI
+    └── .env                   # Shared environment variables
+```
+
+**Critical:** The blockchain workspace loads `.env` from the frontend workspace (see `hardhat.config.ts` path resolution)
 
 ## Critical Development Workflows
 
-### Smart Contract Development
+### Frontend Development (React + Vite)
 ```bash
-# Compile contracts
-npx hardhat compile
-
-# Run all tests (Solidity + TypeScript with ethers.js)
-npx hardhat test
-
-# Run only Solidity tests
-npx hardhat test solidity
-
-# Deploy to Sepolia testnet via Ignition
-npx hardhat ignition deploy ignition/modules/Counter.ts --network sepolia
-
-# Interactive console for debugging
-npx hardhat console --network sepolia
+cd CSU-MARKETPLACE/csu-marketplace
+npm run dev              # Start dev server (port 5173)
+npm run build            # Production build (TypeScript + Vite)
+npm run lint             # ESLint validation
 ```
 
-### Project Structure
+**Key Services Pattern:** All API logic is centralized in `src/services/`:
+- `authService.ts` - Supabase Auth (login, register, profile management)
+- `blockchainService.ts` - Smart contract interactions (ethers.js v6)
+- `productService.ts` - Product CRUD operations
+- `orderService.ts` - Order management and transaction flow
+
+**Context Architecture:** React Context API for global state:
+- `AuthContext` - User authentication (auto-refreshes tokens every 14 min)
+- `WalletContext` - MetaMask wallet connection (wraps `useWallet` hook)
+- `CartContext` - Shopping cart state management
+- `DirectCheckoutContext` - Single-item checkout flow
+
+### Smart Contract Development (Hardhat 2)
+```bash
+cd BLOCKCHAIN-CONTRACT
+npm run compile                          # Compile contracts (generates artifacts + typechain)
+npm run test                            # Run TypeScript tests with Chai matchers
+npm run deploy:ignition:sepolia         # Deploy to Sepolia via Ignition
+npx hardhat verify --network sepolia <ADDRESS>  # Verify on Etherscan
 ```
-CSU-MARKETPLACE/
-├── contracts/          # Solidity smart contracts
-├── test/              # TypeScript tests using ethers.js
-├── ignition/modules/  # Hardhat Ignition deployment modules
-├── scripts/           # Deployment and utility scripts
-├── hardhat.config.ts  # Hardhat 3 Beta configuration
-├── tsconfig.json      # TypeScript configuration
-└── .gitignore         # Git ignore patterns
-```
+
+**Current Deployment:** CSUMarketplace V6.6 at `0x3F1fa083D1103e6fea9e3Dd6c1E95b4505Ac6564` (Sepolia)
+- Etherscan: https://sepolia.etherscan.io/address/0x3F1fa083D1103e6fea9e3Dd6c1E95b4505Ac6564
+- See `BLOCKCHAIN-CONTRACT/DEPLOYMENT-V6.5.md` for deployment details
 
 ### Environment Setup
-- Create `.env` file in project root with:
+- Create `.env` file in `CSU-MARKETPLACE/csu-marketplace/` with:
+  - `VITE_SUPABASE_URL`: Your Supabase project URL
+  - `VITE_SUPABASE_ANON_KEY`: Supabase anonymous key
+  - `VITE_CONTRACT_ADDRESS`: Deployed contract address (V6.6: `0x3F1fa083D1103e6fea9e3Dd6c1E95b4505Ac6564`)
   - `SEPOLIA_RPC_URL`: Alchemy Sepolia endpoint `https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY`
-  - `SEPOLIA_PRIVATE_KEY`: Private key for deployment account
-- Hardhat 3 uses `configVariable()` for environment variables (no dotenv package needed)
-- Network configuration in `hardhat.config.ts` supports Sepolia testnet and local simulation
+  - `SEPOLIA_PRIVATE_KEY`: Private key for deployment account (DO NOT COMMIT)
+  - `ETHERSCAN_API_KEY`: For contract verification
+- Hardhat 2 uses `dotenv` with path resolution to load `.env` from frontend workspace
+- Network configuration in `hardhat.config.ts` supports Sepolia testnet and localhost
 
 ### Prerequisites for New Developers
 ```bash
@@ -59,7 +81,11 @@ npm --version     # Should be 9.x or higher
 
 # Clone and setup
 git clone https://github.com/kurtchinta/CSU-MARKETPLACE.git
-cd CSU-MARKETPLACE
+cd CSU-MARKETPLACE/CSU-MARKETPLACE/csu-marketplace
+npm install
+
+# Setup blockchain workspace
+cd ../../BLOCKCHAIN-CONTRACT
 npm install
 
 # Alchemy Setup:
@@ -71,31 +97,136 @@ npm install
 # MetaMask setup:
 # - Install MetaMask browser extension
 # - Add Sepolia testnet (Chain ID: 11155111, RPC: same Alchemy URL)
-# - Get Sepolia ETH from faucets: https://sepoliafaucet.com/
+# - Get Sepolia ETH from faucets: https://sepoliafaucet.com/ or https://www.alchemy.com/faucets/ethereum-sepolia
 ```
 
 ## Architecture Patterns
 
-### Smart Contract Focus
-- **Current**: Simple Counter contract demonstrating basic functionality
-- **Future**: CSUMarketplace contract with role-based access control and transaction logging
-- **Testing**: TypeScript tests using Hardhat + ethers.js for contract interactions
-- **Deployment**: Hardhat Ignition for reproducible deployments across networks
+### Transaction Flow: The Multi-Transaction Model
 
-### Development Principles
-- **Type Safety**: Full TypeScript integration across contracts, tests, and scripts
-- **Modern Tooling**: Hardhat 3 Beta with enhanced TypeScript support
-- **Network Support**: Local simulation (hardhatMainnet, hardhatOp) and Sepolia testnet
-- **Event-Driven**: Contract events for transaction verification and state tracking
+**Critical Concept:** Each status change creates a NEW immutable blockchain transaction. This is the core architectural pattern:
+
+1. **Buyer Places Order** → `createTransaction()` → Blockchain ID #1 (Status: PENDING)
+2. **Seller Accepts** → `acceptTransaction()` → Blockchain ID #2 (Status: ACCEPTED)
+3. **Seller Rejects** → `rejectTransaction()` → Blockchain ID #3 (Status: REJECTED)
+4. **Buyer Cancels** → `cancelTransaction()` → Blockchain ID #4 (Status: CANCELLED)
+5. **Order Completed** → `completeTransaction()` → Blockchain ID #5 (Status: COMPLETED)
+
+**Implementation:**
+- Supabase `order_details` table: One row per order (mutable state)
+- Supabase `transactions` table: One row per status change (linked to blockchain)
+- Blockchain: Permanent audit trail with `_orderTransactionHistory` mapping
+
+**Example:** See `CheckoutPage.tsx` (createTransaction) and `MyOrdersPage.tsx` (accept/reject/complete)
+
+### Dual Authentication System
+
+Users authenticate with **both** credentials AND wallet:
+1. **Primary Auth:** Supabase Auth (email/password) with JWT tokens
+   - Session persists in localStorage (see `supabase.ts` config)
+   - Auto-refresh every 14 minutes (see `AuthContext.tsx` token refresh timer)
+2. **Blockchain Auth:** MetaMask wallet connection (optional but required for transactions)
+   - Wallet address stored in `users.wallet_address` column
+   - Sepolia testnet (Chain ID: 11155111)
+
+**Key Files:**
+- `src/context/AuthContext.tsx` - Session management with proactive token refresh
+- `src/hooks/useWallet.ts` - MetaMask integration with network detection
+- `src/services/authService.ts` - Supabase Auth API wrapper
+
+### Database-Blockchain Synchronization
+
+**Pattern:** Write to Supabase FIRST, then blockchain IMMEDIATELY after:
+
+```typescript
+// 1. Insert into Supabase (fast, queryable)
+const { data: order } = await supabase.from('order_details').insert({...});
+
+// 2. Record on blockchain (immutable, audit trail)
+const result = await blockchainService.createTransaction({
+  supabaseId: order.order_id,
+  orderId: order.order_id,
+  ...orderData
+});
+
+// 3. Update Supabase with blockchain data
+await supabase.from('transactions').insert({
+  order_id: order.order_id,
+  blockchain_id: result.blockchainId,
+  tx_hash: result.txHash,
+  transaction_status: 'pending'
+});
+```
+
+**Why this order?**
+- Supabase provides fast UI updates and queries
+- Blockchain provides immutable proof (can't be altered/deleted)
+- If blockchain fails, rollback Supabase transaction
 
 ## Project-Specific Conventions
 
-### File Organization
-- **Hardhat config**: `hardhat.config.ts` using TypeScript with type-safe configuration
-- **Contract artifacts**: Not committed - generated in `artifacts/` during compilation (see `.gitignore`)
-- **TypeScript**: Full TypeScript setup with `tsconfig.json` for Node.js 22+ compatibility
-- **Deployment modules**: Ignition modules in `ignition/modules/` (e.g., `Counter.ts`)
-- **Tests**: TypeScript tests in `test/` using Hardhat + ethers.js patterns
+### Service Layer Pattern
+
+**DO:** Call services directly from components (no unnecessary hooks)
+```typescript
+// ✅ GOOD: Direct service import
+import blockchainService from '../services/blockchainService';
+const result = await blockchainService.createTransaction(data);
+```
+
+**DON'T:** Create wrapper hooks unless adding component-specific state
+```typescript
+// ❌ BAD: Unnecessary wrapper (useBlockchain is deprecated)
+import { useBlockchain } from '../hooks/useBlockchain';
+```
+
+### TypeScript Patterns
+
+**Context Providers:** Always export both context AND custom hook
+```typescript
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be within AuthProvider');
+  return context;
+};
+```
+
+**Blockchain Types:** Use `ethers.js v6` patterns (NOT v5)
+```typescript
+// ✅ V6: BigInt native support
+const price = 100n;  // BigInt literal
+const txHash = await contract.createTransaction(...);
+
+// ❌ V5: Don't use BigNumber
+// const price = ethers.BigNumber.from(100);
+```
+
+### Database Conventions
+
+**Enum Naming:** Database uses lowercase with underscores, TypeScript uses camelCase:
+```typescript
+// Database: transaction_status ENUM ('pending', 'accepted', 'rejected', 'completed', 'cancelled')
+// TypeScript: TransactionStatus = 'pending' | 'accepted' | ...
+```
+
+**RLS Policies:** All tables have Row Level Security enabled (see `FINALIZED-OPTIMIZED-SCHEMA.sql`)
+- Users can only update their own records
+- Admins bypass RLS for management operations
+
+### React Component Structure
+
+**Page Components:** Located in `src/pages/`, handle routing and data fetching
+**Shared Components:** Located in `src/components/`, reusable UI elements
+
+**Example Pattern:**
+```typescript
+// CheckoutPage.tsx - orchestrates checkout flow
+// - Fetches cart data from CartContext
+// - Calls blockchainService.createTransaction()
+// - Updates UI based on result
+// - NO business logic in component (use services)
+```
 
 ### Testing Strategy
 ```bash
@@ -124,46 +255,35 @@ npx hardhat coverage                  # Generate test coverage report
 # Standard development cycle
 npx hardhat compile                   # Compile contracts
 npx hardhat test                     # Run tests
-npx hardhat ignition deploy ignition/modules/Counter.ts --network sepolia
+npx hardhat ignition deploy ignition/modules/CSUMarketplace.ts --network sepolia
 
 # For new contracts:
 # 1. Add contract to contracts/ directory
 # 2. Create corresponding test in test/
 # 3. Create Ignition module in ignition/modules/
-# 4. Update this documentation with contract-specific patterns
+# 4. Copy compiled ABI to frontend: artifacts/contracts/CSUMarketplace.sol/CSUMarketplace.json
+# 5. Update CONTRACT_ADDRESS in frontend .env
+# 6. Update this documentation with contract-specific patterns
 ```
-- Dual authentication system: wallet + email/password
-
-## Integration Points
-
-### Contract Deployment & Testing
-- **Local Development**: Use `npx hardhat node` for local blockchain simulation
-- **Testnet Deployment**: Sepolia testnet via Alchemy RPC for realistic testing
-- **Ignition Modules**: Reproducible deployments with parameter management
-- **Event Verification**: Test contract events using ethers.js event filtering
-
-### Critical Dependencies
-- **ethers.js**: v6.x for blockchain interactions and contract deployment
-- **Hardhat 3 Beta**: Modern TypeScript tooling with enhanced network support
-- **TypeScript**: v5.8+ with Node.js 22 compatibility for type safety
 
 ## Common Gotchas
 
-1. **Environment Variables**: Use `configVariable()` in Hardhat config, not dotenv
-2. **Network Configuration**: Hardhat 3 uses typed network configs in `hardhat.config.ts`
-3. **TypeScript Compilation**: Ensure Node.js 22+ compatibility in `tsconfig.json`
-4. **Contract Deployment**: Use Ignition modules for reproducible deployments
+1. **Hardhat Version**: This project uses Hardhat 2, not Hardhat 3 Beta
+2. **Environment Variables**: Loaded via `dotenv` from `../CSU-MARKETPLACE/csu-marketplace/.env`
+3. **Dual Workspaces**: Frontend and blockchain are separate npm projects
+4. **Contract Deployment**: Always update frontend ABI after redeploying contracts
 5. **Test Patterns**: Use BigInt literals (e.g., `1n`) for numerical assertions
 6. **Gas Costs**: Sepolia testnet requires ETH for gas - use faucets for testing
 7. **Alchemy Rate Limits**: Free tier has 300 requests/second limit - monitor usage
-8. **Artifacts**: Build artifacts in `artifacts/` are gitignored - regenerate with `npx hardhat compile`
+8. **Auth Context Loading**: UI renders before profile loads - check `user` not `profile` for auth state
+9. **Service vs Hooks**: Use `blockchainService` directly, not deprecated `useBlockchain` hook
+10. **Transaction Model**: Remember that each status change creates a NEW blockchain transaction
 
 ### Automation Opportunities
 ```bash
-# Consider adding these scripts to package.json:
-# "test:coverage": "npx hardhat coverage"
-# "deploy:sepolia": "npx hardhat ignition deploy ignition/modules/Counter.ts --network sepolia"
-# "compile:check": "npx hardhat compile --force"
+# Frontend development server runs on port 5173
+# Blockchain tests use Hardhat Network (in-memory blockchain)
+# Deploy pipeline: compile → test → deploy:ignition:sepolia → copy ABI → update .env
 ```
 
 ## Testing & Debugging
@@ -172,7 +292,7 @@ npx hardhat ignition deploy ignition/modules/Counter.ts --network sepolia
 ```bash
 npx hardhat console --network sepolia    # Interactive contract debugging
 npx hardhat node                        # Local blockchain for testing
-npx hardhat ignition deploy ignition/modules/Counter.ts --network localhost
+npx hardhat ignition deploy ignition/modules/CSUMarketplace.ts --network localhost
 
 # Alchemy Dashboard Monitoring:
 # - View transaction history and status at https://dashboard.alchemy.com/

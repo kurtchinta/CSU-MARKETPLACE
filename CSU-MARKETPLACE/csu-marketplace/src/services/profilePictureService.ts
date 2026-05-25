@@ -90,11 +90,14 @@ export async function uploadProfilePicture(userId: string, file: File): Promise<
       throw new Error('Failed to get public URL for uploaded image');
     }
 
+    // Add cache-busting query parameter to force browser refresh
+    const cacheBustUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
     // Update user profile with new picture URL
     const { error: updateError } = await supabase
       .from('users')
       .update({
-        profile_picture_url: urlData.publicUrl,
+        profile_picture_url: cacheBustUrl,
         updated_at: new Date().toISOString()
       })
       .eq('user_id', userId);
@@ -104,9 +107,9 @@ export async function uploadProfilePicture(userId: string, file: File): Promise<
       throw updateError;
     }
 
-    console.log('✅ User profile updated with picture URL');
+    console.log('✅ User profile updated with picture URL:', cacheBustUrl);
 
-    return urlData.publicUrl;
+    return cacheBustUrl;
   } catch (error) {
     console.error('❌ Exception in uploadProfilePicture:', error);
     throw error;
